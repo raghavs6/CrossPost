@@ -1,0 +1,78 @@
+# ========================
+# Secrets & Environment
+# ========================
+.env
+*.pem
+*.key
+*.cert
+*.p12
+credentials.json
+
+# ========================
+# Go
+# ========================
+# Compiled binaries
+/bin/
+/dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test artifacts
+*.test
+*.out
+coverage.out
+coverage.html
+
+# Go workspace
+go.work
+go.work.sum
+
+# Vendor directory (if not vendoring)
+vendor/
+
+# ========================
+# Docker
+# ========================
+# Local override files
+docker-compose.override.yml
+docker-compose.local.yml
+
+# ========================
+# AWS
+# ========================
+.aws/
+*.tfstate
+*.tfstate.backup
+.terraform/
+*.tfvars
+
+# ========================
+# OS & Editor
+# ========================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# JetBrains (GoLand)
+.idea/
+*.iml
+
+# VS Code
+.vscode/
+
+# Vim
+*.swp
+*.swo
+
+# ========================
+# Logs & Temp
+# ========================
+*.log
+tmp/
+temp/
+
+.env.example
