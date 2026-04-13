@@ -3,8 +3,10 @@ package main
 import (
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/cors"
 	"github.com/joho/godotenv"
 	"github.com/raghavs6/CrossPost/internal/config"
 	"github.com/raghavs6/CrossPost/internal/db"
@@ -29,6 +31,15 @@ func main() {
 	log.Println("Database connected and migrations applied")
 
 	r := chi.NewRouter()
+
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins:   []string{"http://localhost:5173", os.Getenv("FRONTEND_URL")},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
+		AllowCredentials: true,
+		MaxAge:           300,
+	}))
+
 	r.Get("/health", handler.HealthHandler)
 
 	addr := ":" + cfg.ServerPort
