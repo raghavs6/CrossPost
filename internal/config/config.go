@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 )
 
@@ -18,6 +19,21 @@ type Config struct {
 
 	RedisHost string
 	RedisPort string
+
+	// OAuth / JWT fields.
+	// JWTSecret is always required: without it the server cannot sign or verify
+	// any token, so we fail fast rather than silently issue insecure tokens.
+	// Google OAuth is also validated at startup because the auth routes are
+	// always mounted; failing early is clearer than redirecting users into a
+	// broken external login flow.
+	GoogleClientID     string
+	GoogleClientSecret string
+	GoogleRedirectURL  string
+	JWTSecret          string
+
+	// FrontendURL is where the backend redirects after a successful OAuth
+	// login.  Defaults to http://localhost:5173 for local development.
+	FrontendURL string
 }
 
 // Load reads environment variables into a Config struct.
@@ -35,6 +51,12 @@ func Load() (*Config, error) {
 
 		RedisHost: os.Getenv("REDIS_HOST"),
 		RedisPort: os.Getenv("REDIS_PORT"),
+
+		GoogleClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
+		GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
+		GoogleRedirectURL:  os.Getenv("GOOGLE_REDIRECT_URL"),
+		JWTSecret:          os.Getenv("JWT_SECRET"),
+		FrontendURL:        getEnvOrDefault("FRONTEND_URL", "http://localhost:5173"),
 	}
 
 	if err := cfg.validate(); err != nil {
@@ -67,12 +89,38 @@ func (c *Config) validate() error {
 		"POSTGRES_PORT":     c.PostgresPort,
 		"REDIS_HOST":        c.RedisHost,
 		"REDIS_PORT":        c.RedisPort,
+		"JWT_SECRET":        c.JWTSecret,
 	}
 
 	for name, val := range required {
 		if val == "" {
 			return fmt.Errorf("missing required environment variable: %s", name)
 		}
+	}
+
+	if err := c.validateGoogleOAuth(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *Config) validateGoogleOAuth() error {
+	required := map[string]string{
+		"GOOGLE_CLIENT_ID":     c.GoogleClientID,
+		"GOOGLE_CLIENT_SECRET": c.GoogleClientSecret,
+		"GOOGLE_REDIRECT_URL":  c.GoogleRedirectURL,
+	}
+
+	for name, val := range required {
+		if val == "" {
+			return fmt.Errorf("missing required environment variable: %s", name)
+		}
+	}
+
+	redirectURL, err := url.Parse(c.GoogleRedirectURL)
+	if err != nil || !redirectURL.IsAbs() || redirectURL.Host == "" {
+		return fmt.Errorf("invalid GOOGLE_REDIRECT_URL: must be an absolute URL")
 	}
 
 	return nil

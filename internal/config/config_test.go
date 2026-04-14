@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -14,13 +15,17 @@ func setEnv(t *testing.T, vars map[string]string) {
 }
 
 var validEnv = map[string]string{
-	"POSTGRES_USER":     "testuser",
-	"POSTGRES_PASSWORD": "testpass",
-	"POSTGRES_DB":       "testdb",
-	"POSTGRES_HOST":     "localhost",
-	"POSTGRES_PORT":     "5432",
-	"REDIS_HOST":        "localhost",
-	"REDIS_PORT":        "6379",
+	"POSTGRES_USER":        "testuser",
+	"POSTGRES_PASSWORD":    "testpass",
+	"POSTGRES_DB":          "testdb",
+	"POSTGRES_HOST":        "localhost",
+	"POSTGRES_PORT":        "5432",
+	"REDIS_HOST":           "localhost",
+	"REDIS_PORT":           "6379",
+	"GOOGLE_CLIENT_ID":     "test-client-id.apps.googleusercontent.com",
+	"GOOGLE_CLIENT_SECRET": "test-google-secret",
+	"GOOGLE_REDIRECT_URL":  "http://localhost:8080/api/auth/google/callback",
+	"JWT_SECRET":           "test-jwt-secret",
 }
 
 func TestLoad_Success(t *testing.T) {
@@ -62,6 +67,10 @@ func TestLoad_MissingRequired(t *testing.T) {
 		"POSTGRES_PORT",
 		"REDIS_HOST",
 		"REDIS_PORT",
+		"GOOGLE_CLIENT_ID",
+		"GOOGLE_CLIENT_SECRET",
+		"GOOGLE_REDIRECT_URL",
+		"JWT_SECRET",
 	}
 
 	for _, missing := range requiredKeys {
@@ -74,6 +83,19 @@ func TestLoad_MissingRequired(t *testing.T) {
 				t.Errorf("expected error when %s is missing, got nil", missing)
 			}
 		})
+	}
+}
+
+func TestLoad_InvalidGoogleRedirectURL(t *testing.T) {
+	setEnv(t, validEnv)
+	t.Setenv("GOOGLE_REDIRECT_URL", "/api/auth/google/callback")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for invalid GOOGLE_REDIRECT_URL, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid GOOGLE_REDIRECT_URL") {
+		t.Fatalf("expected invalid redirect error, got: %v", err)
 	}
 }
 

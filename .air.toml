@@ -1,0 +1,27 @@
+# air configuration for CrossPost
+# Docs: https://github.com/air-verse/air
+
+[build]
+  # The command air runs to rebuild the binary.
+  cmd = "go build -o ./tmp/main ./cmd/server/main.go"
+  # The binary air executes after a successful build.
+  bin = "./tmp/main"
+  # Watch these directories for changes.
+  include_dir = ["cmd", "internal"]
+  # Only rebuild when .go files change.
+  include_ext = ["go"]
+  # Ignore these directories (frontend, test cache, the tmp binary itself).
+  exclude_dir = ["tmp", "frontend", "vendor"]
+  # Ignore test files — they don't affect the running server.
+  exclude_regex = ["_test\\.go$"]
+  # Milliseconds to wait after a file change before rebuilding.
+  # Prevents thrashing when you save multiple files quickly.
+  delay = 500
+
+[log]
+  # Show timestamps next to air's log lines.
+  time = true
+
+[misc]
+  # Delete the tmp/ binary when air exits.
+  clean_on_exit = true

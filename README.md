@@ -32,3 +32,20 @@ crosspost/
 ├── docker-compose.yml           # Local infrastructure (Postgres + Redis)
 ├── CLAUDE.md                    # AI Agent Guardrails
 └── README.md                    # Project documentation
+
+## Local Auth Setup
+
+Google sign-in uses the backend OAuth routes, so the server needs these
+variables in the repo-level `.env`:
+
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `GOOGLE_REDIRECT_URL=http://localhost:8080/api/auth/google/callback`
+
+In Google Cloud Console, create a Web application OAuth client and add this
+exact authorised redirect URI:
+
+- `http://localhost:8080/api/auth/google/callback`
+
+If the app shows `Error 401: invalid_client`, the most likely cause is that the
+client ID in `.env` does not match an existing Google OAuth client.
