@@ -13,7 +13,7 @@ export interface Post {
   createdAt: string
 }
 
-export type Platform = 'twitter' | 'linkedin' | 'facebook'
+export type Platform = 'twitter' | 'linkedin' | 'facebook' | 'instagram'
 
 export interface ApiResponse<T> {
   data?: T

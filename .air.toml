@@ -3,7 +3,7 @@
 
 [build]
   # The command air runs to rebuild the binary.
-  cmd = "go build -o ./tmp/main ./cmd/server/main.go"
+  cmd = "go build -o ./tmp/main ./cmd/server"
   # The binary air executes after a successful build.
   bin = "./tmp/main"
   # Watch these directories for changes.
