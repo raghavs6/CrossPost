@@ -18,22 +18,24 @@ import { useAuth } from '../context/AuthContext'
  */
 export default function AuthCallbackPage() {
   const navigate = useNavigate()
-  const { login } = useAuth()
+  const { login, isAuthenticated } = useAuth()
 
+  // Step 1: extract the token from the URL and store it
   useEffect(() => {
-    // URLSearchParams is a browser built-in that parses ?key=value strings.
-    const params = new URLSearchParams(window.location.search)
-    const token = params.get('token')
-
+    const token = new URLSearchParams(window.location.search).get('token')
     if (token) {
       login(token)
-      navigate('/dashboard', { replace: true })
     } else {
-      // No token means something went wrong in the OAuth flow.
-      // Send the user back to the login page rather than leaving them stuck.
       navigate('/login', { replace: true })
     }
   }, [login, navigate])
+
+  // Step 2: navigate only after React has committed the state update
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/dashboard', { replace: true })
+    }
+  }, [isAuthenticated, navigate])
 
   return (
     <div className="flex items-center justify-center h-screen" style={{ backgroundColor: '#07070d' }}>

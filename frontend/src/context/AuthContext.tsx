@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from 'react'
+import { createContext, useContext, useState, useCallback } from 'react'
 import type { ReactNode } from 'react'
 import type { User } from '../types'
 
@@ -19,17 +19,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const isAuthenticated = token !== null
 
-  function login(newToken: string) {
+  const login = useCallback((newToken: string) => {
     localStorage.setItem('accessToken', newToken)
     setToken(newToken)
     // TODO: decode token or call /api/me to populate user
-  }
+  }, [])
 
-  function logout() {
+  const logout = useCallback(() => {
     localStorage.removeItem('accessToken')
     setToken(null)
     setUser(null)
-  }
+  }, [])
 
   return (
     <AuthContext.Provider value={{ user, isAuthenticated, login, logout }}>
