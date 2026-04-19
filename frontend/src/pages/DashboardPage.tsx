@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { listPosts, createPost, deletePost } from '../api/posts'
-import type { Platform, Post } from '../types'
+import { listConnections } from '../api/connections'
+import type { Platform, Post, SocialConnection } from '../types'
 
 // ── SVG Icons ────────────────────────────────────────────────────────────────
 
@@ -90,6 +91,9 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
 
+  // Connections state — which social accounts this user has linked.
+  const [connections, setConnections] = useState<SocialConnection[]>([])
+
   // Fetch the user's posts once, right after the component mounts.
   // The empty dependency array [] means this effect runs only once.
   useEffect(() => {
@@ -97,6 +101,15 @@ export default function DashboardPage() {
       .then(setPosts)
       .catch(() => setLoadError('Failed to load posts.'))
       .finally(() => setIsLoading(false))
+  }, [])
+
+  // Fetch linked social accounts on mount.  Errors are silently ignored —
+  // the worst case is the UI shows "Connect X" when the account is already
+  // linked (harmless; the user can re-link if needed).
+  useEffect(() => {
+    listConnections()
+      .then(setConnections)
+      .catch(() => {})
   }, [])
 
   function handleLogout() {
@@ -171,6 +184,8 @@ export default function DashboardPage() {
       alert('Failed to delete post. Please try again.')
     }
   }
+
+  const twitterConnection = connections.find((c) => c.platform === 'twitter')
 
   return (
     <div
@@ -359,6 +374,34 @@ export default function DashboardPage() {
               </p>
             </div>
           ))}
+        </div>
+
+        {/* Section G — Platform Connections */}
+        <div className="flex flex-col gap-4">
+          <h2 className="text-xs font-semibold tracking-[0.2em] text-white/60 uppercase">
+            Platform Connections
+          </h2>
+
+          {/* X (Twitter) row */}
+          <div className="flex items-center justify-between rounded-xl bg-white/5 border border-white/10 px-5 py-4">
+            <div className="flex items-center gap-2 text-sm text-white/70">
+              <XIcon />
+              X (Twitter)
+            </div>
+            {twitterConnection ? (
+              <span className="text-sm text-green-400">
+                Connected ✓ @{twitterConnection.username}
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => { window.location.href = '/api/auth/twitter' }}
+                className="text-sm text-white/60 hover:text-white border border-white/20 hover:border-white/50 rounded-full px-4 py-1 transition-colors duration-200"
+              >
+                Connect X
+              </button>
+            )}
+          </div>
         </div>
 
       </div>

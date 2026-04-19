@@ -34,6 +34,13 @@ type Config struct {
 	// FrontendURL is where the backend redirects after a successful OAuth
 	// login.  Defaults to http://localhost:5173 for local development.
 	FrontendURL string
+
+	// Twitter OAuth 2.0 — optional.  The server starts without these and
+	// disables the Twitter connect flow gracefully when they are absent.
+	// Use TwitterEnabled() to check before mounting the routes.
+	TwitterClientID     string
+	TwitterClientSecret string
+	TwitterRedirectURL  string
 }
 
 // Load reads environment variables into a Config struct.
@@ -57,6 +64,10 @@ func Load() (*Config, error) {
 		GoogleRedirectURL:  os.Getenv("GOOGLE_REDIRECT_URL"),
 		JWTSecret:          os.Getenv("JWT_SECRET"),
 		FrontendURL:        getEnvOrDefault("FRONTEND_URL", "http://localhost:5173"),
+
+		TwitterClientID:     os.Getenv("TWITTER_CLIENT_ID"),
+		TwitterClientSecret: os.Getenv("TWITTER_CLIENT_SECRET"),
+		TwitterRedirectURL:  getEnvOrDefault("TWITTER_REDIRECT_URL", "http://localhost:8080/api/auth/twitter/callback"),
 	}
 
 	if err := cfg.validate(); err != nil {
@@ -77,6 +88,15 @@ func (c *Config) DSN() string {
 // RedisAddr returns the Redis address in "host:port" format for Asynq.
 func (c *Config) RedisAddr() string {
 	return fmt.Sprintf("%s:%s", c.RedisHost, c.RedisPort)
+}
+
+// TwitterEnabled reports whether all three Twitter OAuth fields are set.
+// Unlike Google OAuth, Twitter OAuth is optional — the server starts without
+// it and gracefully disables the Twitter connect routes when it is absent.
+func (c *Config) TwitterEnabled() bool {
+	return c.TwitterClientID != "" &&
+		c.TwitterClientSecret != "" &&
+		c.TwitterRedirectURL != ""
 }
 
 // validate returns an error if any required field is missing.

@@ -3,13 +3,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import DashboardPage from '../../pages/DashboardPage'
 import * as postsApi from '../../api/posts'
+import * as connectionsApi from '../../api/connections'
 import * as AuthContextModule from '../../context/AuthContext'
-import type { Post } from '../../types'
+import type { Post, SocialConnection } from '../../types'
 
 // Replace the entire posts API module with Vitest fakes.
 // Every function in posts.ts (listPosts, createPost, deletePost) becomes a
 // vi.fn() that we control per-test with mockResolvedValue / mockRejectedValue.
 vi.mock('../../api/posts')
+
+// Replace the connections API module with Vitest fakes.
+// listConnections() is called on every mount; we set a default empty array in
+// beforeEach so existing tests are not affected.
+vi.mock('../../api/connections')
 
 // Replace useAuth so DashboardPage gets a logged-in user without needing a
 // real auth token or a running backend.
@@ -49,6 +55,8 @@ describe('DashboardPage', () => {
     // Reset all mock state between tests so one test's mocks don't bleed into
     // the next.
     vi.clearAllMocks()
+    // Default: no linked social accounts.  Individual tests can override this.
+    vi.mocked(connectionsApi.listConnections).mockResolvedValue([])
   })
 
   it('shows loading state initially', () => {
@@ -150,5 +158,36 @@ describe('DashboardPage', () => {
     expect(
       await screen.findByText('Failed to schedule post. Please try again.'),
     ).toBeInTheDocument()
+  })
+
+  // ---------------------------------------------------------------------------
+  // Platform Connections section
+  // ---------------------------------------------------------------------------
+
+  it('shows Connect X button when X is not connected', async () => {
+    vi.mocked(postsApi.listPosts).mockResolvedValue([])
+    // beforeEach already mocks listConnections to return [] — no override needed.
+
+    renderDashboard()
+
+    expect(await screen.findByText('Connect X')).toBeInTheDocument()
+  })
+
+  it('shows X connected status when account is linked', async () => {
+    vi.mocked(postsApi.listPosts).mockResolvedValue([])
+
+    const mockConnection: SocialConnection = {
+      platform: 'twitter',
+      username: 'mytwitterhandle',
+      connected_at: '2025-01-01T00:00:00.000Z',
+    }
+    vi.mocked(connectionsApi.listConnections).mockResolvedValue([mockConnection])
+
+    renderDashboard()
+
+    // findByText waits for the async listConnections call to resolve.
+    expect(await screen.findByText(/Connected ✓ @mytwitterhandle/)).toBeInTheDocument()
+    // The Connect X button should not appear when already linked.
+    expect(screen.queryByText('Connect X')).not.toBeInTheDocument()
   })
 })

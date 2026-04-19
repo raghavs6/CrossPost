@@ -50,6 +50,15 @@ func main() {
 
 	postHandler := handler.NewPostHandler(database)
 
+	// Twitter auth handler is always constructed (ListConnections works without
+	// OAuth configured), but OAuth routes are only mounted when all three
+	// TWITTER_* env vars are present.
+	twitterAuthHandler := handler.NewTwitterAuthHandler(cfg, database)
+	if cfg.TwitterEnabled() {
+		// Public callback — Twitter redirects here after user consent.
+		r.Get("/api/auth/twitter/callback", twitterAuthHandler.TwitterCallback)
+	}
+
 	// Protected routes — every request must carry a valid JWT.
 	// All routes inside this group are checked by RequireAuth before reaching
 	// their handler.
@@ -60,6 +69,13 @@ func main() {
 		r.Get("/api/posts/{id}", postHandler.GetByID)
 		r.Put("/api/posts/{id}", postHandler.Update)
 		r.Delete("/api/posts/{id}", postHandler.Delete)
+
+		// Social account connections — always available so the dashboard can
+		// show connected platforms (returns [] when none are linked).
+		r.Get("/api/connections", twitterAuthHandler.ListConnections)
+		if cfg.TwitterEnabled() {
+			r.Get("/api/auth/twitter", twitterAuthHandler.TwitterLogin)
+		}
 	})
 
 	addr := ":" + cfg.ServerPort
