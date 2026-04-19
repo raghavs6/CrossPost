@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import type { Platform } from '../types'
+import { listPosts, createPost, deletePost } from '../api/posts'
+import type { Platform, Post } from '../types'
 
 // ── SVG Icons ────────────────────────────────────────────────────────────────
 
@@ -61,15 +62,42 @@ const PLATFORMS: PlatformConfig[] = [
   { id: 'facebook', label: 'Facebook', Icon: FacebookIcon },
 ]
 
+// ── Status badge ──────────────────────────────────────────────────────────────
+
+const STATUS_STYLES: Record<Post['status'], string> = {
+  draft: 'bg-white/10 text-white/50',
+  queued: 'bg-blue-500/20 text-blue-300',
+  published: 'bg-green-500/20 text-green-300',
+  failed: 'bg-red-500/20 text-red-300',
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
   const { logout } = useAuth()
   const navigate = useNavigate()
 
+  // Form state
   const [content, setContent] = useState('')
   const [connected, setConnected] = useState<Set<Platform>>(new Set())
+  const [scheduledAt, setScheduledAt] = useState('')
   const [isDragOver, setIsDragOver] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Posts list state
+  const [posts, setPosts] = useState<Post[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  // Fetch the user's posts once, right after the component mounts.
+  // The empty dependency array [] means this effect runs only once.
+  useEffect(() => {
+    listPosts()
+      .then(setPosts)
+      .catch(() => setLoadError('Failed to load posts.'))
+      .finally(() => setIsLoading(false))
+  }, [])
 
   function handleLogout() {
     logout()
@@ -86,6 +114,62 @@ export default function DashboardPage() {
       }
       return next
     })
+  }
+
+  async function handleSubmit() {
+    setSubmitError(null)
+
+    // Client-side validation — mirrors the backend validation so the user gets
+    // instant feedback without a round-trip.
+    if (!content.trim()) {
+      setSubmitError('Content is required.')
+      return
+    }
+    if (connected.size === 0) {
+      setSubmitError('Select at least one platform.')
+      return
+    }
+    if (!scheduledAt) {
+      setSubmitError('Please pick a scheduled time.')
+      return
+    }
+
+    setIsSubmitting(true)
+    try {
+      // connected is a Set<Platform>; the API expects string[].
+      // new Date(scheduledAt).toISOString() converts "2025-01-15T14:30"
+      // (what datetime-local gives us, no timezone) to a full ISO 8601 string
+      // with UTC timezone that the Go backend can parse as time.Time.
+      const newPost = await createPost({
+        content,
+        platforms: Array.from(connected),
+        scheduled_at: new Date(scheduledAt).toISOString(),
+      })
+
+      // Prepend the new post so it appears at the top of the list immediately,
+      // without waiting for another round-trip to re-fetch the list.
+      setPosts((prev) => [newPost, ...prev])
+
+      // Reset the form
+      setContent('')
+      setConnected(new Set())
+      setScheduledAt('')
+    } catch {
+      setSubmitError('Failed to schedule post. Please try again.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  async function handleDelete(id: number) {
+    if (!window.confirm('Delete this post?')) return
+    try {
+      await deletePost(id)
+      // Remove the deleted post from local state — no need to re-fetch the list.
+      setPosts((prev) => prev.filter((p) => p.id !== id))
+    } catch {
+      alert('Failed to delete post. Please try again.')
+    }
   }
 
   return (
@@ -189,18 +273,92 @@ export default function DashboardPage() {
           </label>
           <input
             type="datetime-local"
+            value={scheduledAt}
+            onChange={(e) => setScheduledAt(e.target.value)}
             className="w-full appearance-none bg-white/5 border border-white/10 text-white/70 rounded-xl px-4 py-3 focus:outline-none focus:border-white/30 transition-colors duration-200"
           />
         </div>
 
         {/* Section E — Submit */}
-        <div className="flex justify-end">
-          <button
-            type="button"
-            className="bg-white text-black font-semibold rounded-full px-8 py-3 hover:bg-white/90 transition-colors duration-200"
-          >
-            Schedule Post
-          </button>
+        <div className="flex flex-col gap-3">
+          {submitError && (
+            <p className="text-sm text-red-400">{submitError}</p>
+          )}
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              className="bg-white text-black font-semibold rounded-full px-8 py-3 hover:bg-white/90 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSubmitting ? 'Scheduling…' : 'Schedule Post'}
+            </button>
+          </div>
+        </div>
+
+        {/* Section F — Scheduled posts list */}
+        <div className="flex flex-col gap-4">
+          <h2 className="text-xs font-semibold tracking-[0.2em] text-white/60 uppercase">
+            Scheduled Posts
+          </h2>
+
+          {isLoading && (
+            <p className="text-sm text-white/40">Loading…</p>
+          )}
+
+          {loadError && (
+            <p className="text-sm text-red-400">{loadError}</p>
+          )}
+
+          {!isLoading && !loadError && posts.length === 0 && (
+            <p className="text-sm text-white/30">No posts yet. Create one above.</p>
+          )}
+
+          {posts.map((post) => (
+            <div
+              key={post.id}
+              className="flex flex-col gap-3 rounded-xl bg-white/5 border border-white/10 px-5 py-4"
+            >
+              {/* Top row: status badge + delete button */}
+              <div className="flex items-center justify-between">
+                <span
+                  className={[
+                    'text-xs font-semibold px-2 py-0.5 rounded-full capitalize',
+                    STATUS_STYLES[post.status],
+                  ].join(' ')}
+                >
+                  {post.status}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleDelete(post.id)}
+                  className="text-xs text-white/30 hover:text-red-400 transition-colors duration-200"
+                >
+                  Delete
+                </button>
+              </div>
+
+              {/* Content preview — truncated to one line */}
+              <p className="text-sm text-white/80 truncate">{post.content}</p>
+
+              {/* Platform tags */}
+              <div className="flex flex-wrap gap-2">
+                {post.platforms.map((p) => (
+                  <span
+                    key={p}
+                    className="text-xs text-white/40 border border-white/10 rounded-full px-2 py-0.5 capitalize"
+                  >
+                    {p}
+                  </span>
+                ))}
+              </div>
+
+              {/* Scheduled time */}
+              <p className="text-xs text-white/30">
+                {new Date(post.scheduledAt).toLocaleString()}
+              </p>
+            </div>
+          ))}
         </div>
 
       </div>
