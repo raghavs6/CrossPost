@@ -48,11 +48,18 @@ func main() {
 	r.Get("/api/auth/google", authHandler.GoogleLogin)
 	r.Get("/api/auth/google/callback", authHandler.GoogleCallback)
 
+	postHandler := handler.NewPostHandler(database)
+
 	// Protected routes — every request must carry a valid JWT.
-	// Add future authenticated endpoints inside this group.
+	// All routes inside this group are checked by RequireAuth before reaching
+	// their handler.
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireAuth(cfg.JWTSecret))
-		// r.Get("/api/posts", postsHandler.List)  // future routes go here
+		r.Post("/api/posts", postHandler.Create)
+		r.Get("/api/posts", postHandler.List)
+		r.Get("/api/posts/{id}", postHandler.GetByID)
+		r.Put("/api/posts/{id}", postHandler.Update)
+		r.Delete("/api/posts/{id}", postHandler.Delete)
 	})
 
 	addr := ":" + cfg.ServerPort

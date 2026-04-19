@@ -31,8 +31,8 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("failed to open in-memory SQLite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}); err != nil {
-		t.Fatalf("failed to migrate User table: %v", err)
+	if err := db.AutoMigrate(&model.User{}, &model.Post{}); err != nil {
+		t.Fatalf("failed to migrate User and Post tables: %v", err)
 	}
 	return db
 }
