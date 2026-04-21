@@ -1,4 +1,5 @@
 # CrossPost: Project & AI Agent Instructions
+DO NOT READ .env
 
 ## Project Description
 **CrossPost** is a cross-platform social scheduler built for freelancers, small business owners, and content creators. 

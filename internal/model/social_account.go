@@ -18,11 +18,11 @@ import (
 // tokens can be long strings and we never need to index them.
 type SocialAccount struct {
 	gorm.Model
-	UserID         uint      `gorm:"not null;index;uniqueIndex:idx_user_platform"`
-	Platform       string    `gorm:"not null;uniqueIndex:idx_user_platform"` // e.g. "twitter"
-	PlatformUserID string    `gorm:"not null"`                               // platform's own user ID
-	Username       string    `gorm:"not null"`                               // @handle without the @
-	AccessToken    string    `gorm:"not null;type:text"`
-	RefreshToken   string    `gorm:"type:text"`
+	UserID         uint   `gorm:"not null;index;uniqueIndex:idx_user_platform"`
+	Platform       string `gorm:"not null;uniqueIndex:idx_user_platform"` // e.g. "twitter"
+	PlatformUserID string `gorm:"not null"`                               // platform's own user ID
+	Username       string `gorm:"not null"`                               // @handle without the @
+	AccessToken    string `gorm:"not null;type:text"`
+	RefreshToken   string `gorm:"type:text"`
 	TokenExpiry    time.Time
 }
