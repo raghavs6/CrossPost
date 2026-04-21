@@ -36,6 +36,13 @@ type TwitterAuthHandler struct {
 	frontendURL string
 }
 
+// TwitterAuthorizationURLResponse is returned by the protected auth-start
+// endpoint. The frontend fetches this JSON with its Bearer token, then performs
+// a normal browser redirect to the returned X consent URL.
+type TwitterAuthorizationURLResponse struct {
+	AuthorizationURL string `json:"authorization_url"`
+}
+
 // NewTwitterAuthHandler constructs a TwitterAuthHandler from the app config.
 // Callers should check cfg.TwitterEnabled() before registering routes — the
 // handler is created unconditionally so ListConnections works even without
@@ -66,7 +73,8 @@ func NewTwitterAuthHandler(cfg *config.Config, db *gorm.DB) *TwitterAuthHandler 
 //  1. Reads the caller's user ID from the JWT context.
 //  2. Generates a random state (CSRF protection) and a PKCE verifier.
 //  3. Stores state, verifier, and user ID in short-lived HttpOnly cookies.
-//  4. Redirects the browser to Twitter's consent page.
+//  4. Returns the X consent URL as JSON so the authenticated frontend can
+//     redirect the browser explicitly.
 func (h *TwitterAuthHandler) TwitterLogin(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
 
@@ -93,7 +101,10 @@ func (h *TwitterAuthHandler) TwitterLogin(w http.ResponseWriter, r *http.Request
 	}
 
 	url := h.oauthConf.AuthCodeURL(state, oauth2.S256ChallengeOption(verifier))
-	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(TwitterAuthorizationURLResponse{
+		AuthorizationURL: url,
+	})
 }
 
 // TwitterCallback handles GET /api/auth/twitter/callback (public — no JWT required).

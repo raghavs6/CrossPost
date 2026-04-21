@@ -83,17 +83,25 @@ func TestTwitterLogin_RedirectsToTwitter(t *testing.T) {
 	w := runWithAuth(h.TwitterLogin, req)
 
 	resp := w.Result()
-	if resp.StatusCode != http.StatusTemporaryRedirect {
-		t.Fatalf("expected 307, got %d (body: %s)", resp.StatusCode, w.Body.String())
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body: %s)", resp.StatusCode, w.Body.String())
 	}
 
-	location := resp.Header.Get("Location")
-	if !strings.Contains(location, "twitter.test/i/oauth2/authorize") {
-		t.Fatalf("expected redirect to Twitter auth URL, got %q", location)
+	if got := resp.Header.Get("Content-Type"); !strings.Contains(got, "application/json") {
+		t.Fatalf("expected JSON content type, got %q", got)
+	}
+
+	var payload TwitterAuthorizationURLResponse
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("failed to decode JSON response: %v", err)
+	}
+
+	if !strings.Contains(payload.AuthorizationURL, "twitter.test/i/oauth2/authorize") {
+		t.Fatalf("expected Twitter auth URL, got %q", payload.AuthorizationURL)
 	}
 	// S256ChallengeOption should inject code_challenge into the URL.
-	if !strings.Contains(location, "code_challenge") {
-		t.Fatalf("expected PKCE code_challenge in redirect URL, got %q", location)
+	if !strings.Contains(payload.AuthorizationURL, "code_challenge") {
+		t.Fatalf("expected PKCE code_challenge in auth URL, got %q", payload.AuthorizationURL)
 	}
 
 	// All three cookies must be set and non-empty.

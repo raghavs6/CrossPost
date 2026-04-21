@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { listPosts, createPost, deletePost } from '../api/posts'
-import { listConnections } from '../api/connections'
+import { listConnections, beginTwitterConnection, redirectToExternalURL } from '../api/connections'
 import type { Platform, Post, SocialConnection } from '../types'
 
 // ── SVG Icons ────────────────────────────────────────────────────────────────
@@ -182,6 +182,15 @@ export default function DashboardPage() {
       setPosts((prev) => prev.filter((p) => p.id !== id))
     } catch {
       alert('Failed to delete post. Please try again.')
+    }
+  }
+
+  async function handleTwitterConnect() {
+    try {
+      const authorizationURL = await beginTwitterConnection()
+      redirectToExternalURL(authorizationURL)
+    } catch {
+      alert('Failed to start X connection. Please try again.')
     }
   }
 
@@ -395,7 +404,7 @@ export default function DashboardPage() {
             ) : (
               <button
                 type="button"
-                onClick={() => { window.location.href = '/api/auth/twitter' }}
+                onClick={handleTwitterConnect}
                 className="text-sm text-white/60 hover:text-white border border-white/20 hover:border-white/50 rounded-full px-4 py-1 transition-colors duration-200"
               >
                 Connect X

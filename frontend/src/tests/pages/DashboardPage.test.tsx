@@ -173,6 +173,25 @@ describe('DashboardPage', () => {
     expect(await screen.findByText('Connect X')).toBeInTheDocument()
   })
 
+  it('starts X connection by fetching the auth URL and redirecting the browser', async () => {
+    vi.mocked(postsApi.listPosts).mockResolvedValue([])
+    vi.mocked(connectionsApi.beginTwitterConnection).mockResolvedValue(
+      'https://twitter.example/i/oauth2/authorize?state=test',
+    )
+    vi.mocked(connectionsApi.redirectToExternalURL).mockImplementation(() => {})
+
+    renderDashboard()
+
+    fireEvent.click(await screen.findByText('Connect X'))
+
+    await waitFor(() => {
+      expect(connectionsApi.beginTwitterConnection).toHaveBeenCalledTimes(1)
+      expect(connectionsApi.redirectToExternalURL).toHaveBeenCalledWith(
+        'https://twitter.example/i/oauth2/authorize?state=test',
+      )
+    })
+  })
+
   it('shows X connected status when account is linked', async () => {
     vi.mocked(postsApi.listPosts).mockResolvedValue([])
 
