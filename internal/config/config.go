@@ -32,7 +32,8 @@ type Config struct {
 	JWTSecret          string
 
 	// FrontendURL is where the backend redirects after a successful OAuth
-	// login.  Defaults to http://localhost:5173 for local development.
+	// login.  Defaults to http://127.0.0.1:5173 for local development so the
+	// frontend host matches local OAuth callback hostnames exactly.
 	FrontendURL string
 
 	// Twitter OAuth 2.0 — optional.  The server starts without these and
@@ -63,11 +64,11 @@ func Load() (*Config, error) {
 		GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
 		GoogleRedirectURL:  os.Getenv("GOOGLE_REDIRECT_URL"),
 		JWTSecret:          os.Getenv("JWT_SECRET"),
-		FrontendURL:        getEnvOrDefault("FRONTEND_URL", "http://localhost:5173"),
+		FrontendURL:        getEnvOrDefault("FRONTEND_URL", "http://127.0.0.1:5173"),
 
 		TwitterClientID:     os.Getenv("TWITTER_CLIENT_ID"),
 		TwitterClientSecret: os.Getenv("TWITTER_CLIENT_SECRET"),
-		TwitterRedirectURL:  getEnvOrDefault("TWITTER_REDIRECT_URL", "http://localhost:8080/api/auth/twitter/callback"),
+		TwitterRedirectURL:  getEnvOrDefault("TWITTER_REDIRECT_URL", "http://127.0.0.1:8080/api/auth/twitter/callback"),
 	}
 
 	if err := cfg.validate(); err != nil {

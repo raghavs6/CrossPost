@@ -40,12 +40,18 @@ variables in the repo-level `.env`:
 
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
-- `GOOGLE_REDIRECT_URL=http://localhost:8080/api/auth/google/callback`
+- `GOOGLE_REDIRECT_URL=http://127.0.0.1:8080/api/auth/google/callback`
+- `FRONTEND_URL=http://127.0.0.1:5173`
 
 In Google Cloud Console, create a Web application OAuth client and add this
 exact authorised redirect URI:
 
-- `http://localhost:8080/api/auth/google/callback`
+- `http://127.0.0.1:8080/api/auth/google/callback`
 
 If the app shows `Error 401: invalid_client`, the most likely cause is that the
 client ID in `.env` does not match an existing Google OAuth client.
+
+For X OAuth account linking, use the same `127.0.0.1` host for both the frontend
+and backend callback in local development. Mixing `localhost` and `127.0.0.1`
+causes the browser to drop the short-lived OAuth state cookie, which leads to
+`state mismatch` in the callback handler.

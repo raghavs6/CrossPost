@@ -27,7 +27,7 @@ func setupTwitterHandler(t *testing.T, twitterID, username string) *TwitterAuthH
 		oauthConf: &oauth2.Config{
 			ClientID:     "test-twitter-client-id",
 			ClientSecret: "test-twitter-client-secret",
-			RedirectURL:  "http://localhost/callback",
+			RedirectURL:  "http://127.0.0.1/callback",
 			Endpoint: oauth2.Endpoint{
 				AuthURL:  "https://twitter.test/i/oauth2/authorize",
 				TokenURL: "https://api.twitter.test/2/oauth2/token",
@@ -61,7 +61,7 @@ func setupTwitterHandler(t *testing.T, twitterID, username string) *TwitterAuthH
 			}),
 		},
 		userInfoURL: "https://api.twitter.test/2/users/me",
-		frontendURL: "http://localhost:5173",
+		frontendURL: "http://127.0.0.1:5173",
 	}
 }
 

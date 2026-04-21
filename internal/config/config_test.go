@@ -24,7 +24,7 @@ var validEnv = map[string]string{
 	"REDIS_PORT":           "6379",
 	"GOOGLE_CLIENT_ID":     "test-client-id.apps.googleusercontent.com",
 	"GOOGLE_CLIENT_SECRET": "test-google-secret",
-	"GOOGLE_REDIRECT_URL":  "http://localhost:8080/api/auth/google/callback",
+	"GOOGLE_REDIRECT_URL":  "http://127.0.0.1:8080/api/auth/google/callback",
 	"JWT_SECRET":           "test-jwt-secret",
 }
 
@@ -55,6 +55,22 @@ func TestLoad_CustomServerPort(t *testing.T) {
 
 	if cfg.ServerPort != "9090" {
 		t.Errorf("expected ServerPort=9090, got %q", cfg.ServerPort)
+	}
+}
+
+func TestLoad_DefaultLocalOAuthHosts(t *testing.T) {
+	setEnv(t, validEnv)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+
+	if cfg.FrontendURL != "http://127.0.0.1:5173" {
+		t.Errorf("expected default FrontendURL to use 127.0.0.1, got %q", cfg.FrontendURL)
+	}
+	if cfg.TwitterRedirectURL != "http://127.0.0.1:8080/api/auth/twitter/callback" {
+		t.Errorf("expected default TwitterRedirectURL to use 127.0.0.1, got %q", cfg.TwitterRedirectURL)
 	}
 }
 
