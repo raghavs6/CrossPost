@@ -49,6 +49,7 @@ func main() {
 	r.Get("/api/auth/google/callback", authHandler.GoogleCallback)
 
 	postHandler := handler.NewPostHandler(database)
+	publishHandler := handler.NewPublishHandler(database)
 
 	// Twitter auth handler is always constructed (ListConnections works without
 	// OAuth configured), but OAuth routes are only mounted when all three
@@ -69,6 +70,7 @@ func main() {
 		r.Get("/api/posts/{id}", postHandler.GetByID)
 		r.Put("/api/posts/{id}", postHandler.Update)
 		r.Delete("/api/posts/{id}", postHandler.Delete)
+		r.Post("/api/posts/{id}/publish", publishHandler.Publish)
 
 		// Social account connections — always available so the dashboard can
 		// show connected platforms (returns [] when none are linked).
