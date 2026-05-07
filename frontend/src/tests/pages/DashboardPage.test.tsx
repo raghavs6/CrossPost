@@ -181,6 +181,14 @@ describe('DashboardPage', () => {
     expect(await screen.findByText('Connect Facebook')).toBeInTheDocument()
   })
 
+  it('shows Connect Instagram button when Instagram is not connected', async () => {
+    vi.mocked(postsApi.listPosts).mockResolvedValue([])
+
+    renderDashboard()
+
+    expect(await screen.findByText('Connect Instagram')).toBeInTheDocument()
+  })
+
   it('starts X connection by fetching the auth URL and redirecting the browser', async () => {
     vi.mocked(postsApi.listPosts).mockResolvedValue([])
     vi.mocked(connectionsApi.beginTwitterConnection).mockResolvedValue(
@@ -252,5 +260,41 @@ describe('DashboardPage', () => {
 
     expect(await screen.findByText(/Connected Facebook ✓ Ada Lovelace/)).toBeInTheDocument()
     expect(screen.queryByText('Connect Facebook')).not.toBeInTheDocument()
+  })
+
+  it('starts Instagram connection by fetching the auth URL and redirecting the browser', async () => {
+    vi.mocked(postsApi.listPosts).mockResolvedValue([])
+    vi.mocked(connectionsApi.beginInstagramConnection).mockResolvedValue(
+      'https://instagram.example/oauth/authorize?state=test',
+    )
+    vi.mocked(connectionsApi.redirectToExternalURL).mockImplementation(() => {})
+
+    renderDashboard()
+
+    fireEvent.click(await screen.findByText('Connect Instagram'))
+
+    await waitFor(() => {
+      expect(connectionsApi.beginInstagramConnection).toHaveBeenCalledTimes(1)
+      expect(connectionsApi.redirectToExternalURL).toHaveBeenCalledWith(
+        'https://instagram.example/oauth/authorize?state=test',
+      )
+    })
+  })
+
+  it('shows Instagram connected status when account is linked', async () => {
+    vi.mocked(postsApi.listPosts).mockResolvedValue([])
+
+    const mockConnection: SocialConnection = {
+      platform: 'instagram',
+      display_name: 'CrossPost Creator',
+      username: 'crosspostcreator',
+      connected_at: '2025-01-01T00:00:00.000Z',
+    }
+    vi.mocked(connectionsApi.listConnections).mockResolvedValue([mockConnection])
+
+    renderDashboard()
+
+    expect(await screen.findByText(/Connected Instagram ✓ @crosspostcreator/)).toBeInTheDocument()
+    expect(screen.queryByText('Connect Instagram')).not.toBeInTheDocument()
   })
 })

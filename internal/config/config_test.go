@@ -75,6 +75,9 @@ func TestLoad_DefaultLocalOAuthHosts(t *testing.T) {
 	if cfg.FacebookRedirectURL != "http://127.0.0.1:8080/api/auth/facebook/callback" {
 		t.Errorf("expected default FacebookRedirectURL to use 127.0.0.1, got %q", cfg.FacebookRedirectURL)
 	}
+	if cfg.InstagramRedirectURL != "http://127.0.0.1:8080/api/auth/instagram/callback" {
+		t.Errorf("expected default InstagramRedirectURL to use 127.0.0.1, got %q", cfg.InstagramRedirectURL)
+	}
 }
 
 func TestLoad_MissingRequired(t *testing.T) {
@@ -160,11 +163,16 @@ func TestOptionalSocialOAuthEnabled(t *testing.T) {
 	if cfg.FacebookEnabled() {
 		t.Fatal("expected FacebookEnabled to be false when FACEBOOK_* vars are unset")
 	}
+	if cfg.InstagramEnabled() {
+		t.Fatal("expected InstagramEnabled to be false when INSTAGRAM_* vars are unset")
+	}
 
 	t.Setenv("TWITTER_CLIENT_ID", "twitter-id")
 	t.Setenv("TWITTER_CLIENT_SECRET", "twitter-secret")
 	t.Setenv("FACEBOOK_APP_ID", "facebook-id")
 	t.Setenv("FACEBOOK_APP_SECRET", "facebook-secret")
+	t.Setenv("INSTAGRAM_CLIENT_ID", "instagram-id")
+	t.Setenv("INSTAGRAM_CLIENT_SECRET", "instagram-secret")
 
 	cfg, err = Load()
 	if err != nil {
@@ -176,5 +184,8 @@ func TestOptionalSocialOAuthEnabled(t *testing.T) {
 	}
 	if !cfg.FacebookEnabled() {
 		t.Fatal("expected FacebookEnabled to be true when FACEBOOK_* vars are set")
+	}
+	if !cfg.InstagramEnabled() {
+		t.Fatal("expected InstagramEnabled to be true when INSTAGRAM_* vars are set")
 	}
 }

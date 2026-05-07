@@ -56,6 +56,7 @@ func main() {
 	// TWITTER_* env vars are present.
 	twitterAuthHandler := handler.NewTwitterAuthHandler(cfg, database)
 	facebookAuthHandler := handler.NewFacebookAuthHandler(cfg, database)
+	instagramAuthHandler := handler.NewInstagramAuthHandler(cfg, database)
 	if cfg.TwitterEnabled() {
 		// Public callback — Twitter redirects here after user consent.
 		r.Get("/api/auth/twitter/callback", twitterAuthHandler.TwitterCallback)
@@ -63,6 +64,10 @@ func main() {
 	if cfg.FacebookEnabled() {
 		// Public callback — Facebook redirects here after user consent.
 		r.Get("/api/auth/facebook/callback", facebookAuthHandler.FacebookCallback)
+	}
+	if cfg.InstagramEnabled() {
+		// Public callback — Instagram redirects here after user consent.
+		r.Get("/api/auth/instagram/callback", instagramAuthHandler.InstagramCallback)
 	}
 
 	// Protected routes — every request must carry a valid JWT.
@@ -85,6 +90,9 @@ func main() {
 		}
 		if cfg.FacebookEnabled() {
 			r.Get("/api/auth/facebook", facebookAuthHandler.FacebookLogin)
+		}
+		if cfg.InstagramEnabled() {
+			r.Get("/api/auth/instagram", instagramAuthHandler.InstagramLogin)
 		}
 	})
 

@@ -27,6 +27,13 @@ export async function beginFacebookConnection(): Promise<string> {
   return res.data.authorization_url
 }
 
+// beginInstagramConnection fetches the Instagram consent URL from the
+// protected backend route. The caller is responsible for redirecting the browser.
+export async function beginInstagramConnection(): Promise<string> {
+  const res = await apiClient.get<TwitterAuthorizationResponse>('/api/auth/instagram')
+  return res.data.authorization_url
+}
+
 // redirectToExternalURL performs the browser navigation after the authenticated
 // API call has returned the X consent URL.
 export function redirectToExternalURL(url: string): void {

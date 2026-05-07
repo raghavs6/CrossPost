@@ -6,6 +6,7 @@ import {
   listConnections,
   beginTwitterConnection,
   beginFacebookConnection,
+  beginInstagramConnection,
   redirectToExternalURL,
 } from '../api/connections'
 import type { Platform, Post, SocialConnection } from '../types'
@@ -208,8 +209,18 @@ export default function DashboardPage() {
     }
   }
 
+  async function handleInstagramConnect() {
+    try {
+      const authorizationURL = await beginInstagramConnection()
+      redirectToExternalURL(authorizationURL)
+    } catch {
+      alert('Failed to start Instagram connection. Please try again.')
+    }
+  }
+
   const twitterConnection = connections.find((c) => c.platform === 'twitter')
   const facebookConnection = connections.find((c) => c.platform === 'facebook')
+  const instagramConnection = connections.find((c) => c.platform === 'instagram')
 
   return (
     <div
@@ -366,6 +377,20 @@ export default function DashboardPage() {
                 className="rounded-full border border-white/20 px-4 py-2 text-sm text-white/70 hover:border-white/50 hover:text-white transition-colors duration-200"
               >
                 Connect Facebook
+              </button>
+            )}
+
+            {instagramConnection ? (
+              <div className="rounded-full border border-white/15 px-4 py-2 text-sm text-white/80">
+                Connected Instagram ✓ @{instagramConnection.username}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleInstagramConnect}
+                className="rounded-full border border-white/20 px-4 py-2 text-sm text-white/70 hover:border-white/50 hover:text-white transition-colors duration-200"
+              >
+                Connect Instagram
               </button>
             )}
           </div>

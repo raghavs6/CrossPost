@@ -48,6 +48,12 @@ type Config struct {
 	FacebookAppID       string
 	FacebookAppSecret   string
 	FacebookRedirectURL string
+
+	// Instagram Login — optional. The server starts without these and disables
+	// the Instagram connect flow gracefully when they are absent.
+	InstagramClientID     string
+	InstagramClientSecret string
+	InstagramRedirectURL  string
 }
 
 // Load reads environment variables into a Config struct.
@@ -78,6 +84,9 @@ func Load() (*Config, error) {
 		FacebookAppID:       os.Getenv("FACEBOOK_APP_ID"),
 		FacebookAppSecret:   os.Getenv("FACEBOOK_APP_SECRET"),
 		FacebookRedirectURL: getEnvOrDefault("FACEBOOK_REDIRECT_URL", "http://127.0.0.1:8080/api/auth/facebook/callback"),
+		InstagramClientID:     os.Getenv("INSTAGRAM_CLIENT_ID"),
+		InstagramClientSecret: os.Getenv("INSTAGRAM_CLIENT_SECRET"),
+		InstagramRedirectURL:  getEnvOrDefault("INSTAGRAM_REDIRECT_URL", "http://127.0.0.1:8080/api/auth/instagram/callback"),
 	}
 
 	if err := cfg.validate(); err != nil {
@@ -116,6 +125,15 @@ func (c *Config) FacebookEnabled() bool {
 	return c.FacebookAppID != "" &&
 		c.FacebookAppSecret != "" &&
 		c.FacebookRedirectURL != ""
+}
+
+// InstagramEnabled reports whether all three Instagram Login fields are set.
+// Like Twitter and Facebook, Instagram is optional and is enabled only when
+// the environment is fully configured.
+func (c *Config) InstagramEnabled() bool {
+	return c.InstagramClientID != "" &&
+		c.InstagramClientSecret != "" &&
+		c.InstagramRedirectURL != ""
 }
 
 // validate returns an error if any required field is missing.

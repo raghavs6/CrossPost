@@ -55,3 +55,14 @@ For X OAuth account linking, use the same `127.0.0.1` host for both the frontend
 and backend callback in local development. Mixing `localhost` and `127.0.0.1`
 causes the browser to drop the short-lived OAuth state cookie, which leads to
 `state mismatch` in the callback handler.
+
+Instagram account linking also uses backend OAuth routes. For local development,
+configure these values in the repo-level `.env`:
+
+- `INSTAGRAM_CLIENT_ID`
+- `INSTAGRAM_CLIENT_SECRET`
+- `INSTAGRAM_REDIRECT_URL=http://127.0.0.1:8080/api/auth/instagram/callback`
+
+This flow currently supports **Instagram professional accounts only**
+(Business/Creator) and stores the linked account for display in the dashboard.
+Posting to Instagram is not implemented yet.
