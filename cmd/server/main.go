@@ -55,9 +55,14 @@ func main() {
 	// OAuth configured), but OAuth routes are only mounted when all three
 	// TWITTER_* env vars are present.
 	twitterAuthHandler := handler.NewTwitterAuthHandler(cfg, database)
+	facebookAuthHandler := handler.NewFacebookAuthHandler(cfg, database)
 	if cfg.TwitterEnabled() {
 		// Public callback — Twitter redirects here after user consent.
 		r.Get("/api/auth/twitter/callback", twitterAuthHandler.TwitterCallback)
+	}
+	if cfg.FacebookEnabled() {
+		// Public callback — Facebook redirects here after user consent.
+		r.Get("/api/auth/facebook/callback", facebookAuthHandler.FacebookCallback)
 	}
 
 	// Protected routes — every request must carry a valid JWT.
@@ -77,6 +82,9 @@ func main() {
 		r.Get("/api/connections", twitterAuthHandler.ListConnections)
 		if cfg.TwitterEnabled() {
 			r.Get("/api/auth/twitter", twitterAuthHandler.TwitterLogin)
+		}
+		if cfg.FacebookEnabled() {
+			r.Get("/api/auth/facebook", facebookAuthHandler.FacebookLogin)
 		}
 	})
 

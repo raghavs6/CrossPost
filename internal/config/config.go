@@ -42,6 +42,12 @@ type Config struct {
 	TwitterClientID     string
 	TwitterClientSecret string
 	TwitterRedirectURL  string
+
+	// Facebook Login — optional. The server starts without these and disables
+	// the Facebook connect flow gracefully when they are absent.
+	FacebookAppID       string
+	FacebookAppSecret   string
+	FacebookRedirectURL string
 }
 
 // Load reads environment variables into a Config struct.
@@ -69,6 +75,9 @@ func Load() (*Config, error) {
 		TwitterClientID:     os.Getenv("TWITTER_CLIENT_ID"),
 		TwitterClientSecret: os.Getenv("TWITTER_CLIENT_SECRET"),
 		TwitterRedirectURL:  getEnvOrDefault("TWITTER_REDIRECT_URL", "http://127.0.0.1:8080/api/auth/twitter/callback"),
+		FacebookAppID:       os.Getenv("FACEBOOK_APP_ID"),
+		FacebookAppSecret:   os.Getenv("FACEBOOK_APP_SECRET"),
+		FacebookRedirectURL: getEnvOrDefault("FACEBOOK_REDIRECT_URL", "http://127.0.0.1:8080/api/auth/facebook/callback"),
 	}
 
 	if err := cfg.validate(); err != nil {
@@ -98,6 +107,15 @@ func (c *Config) TwitterEnabled() bool {
 	return c.TwitterClientID != "" &&
 		c.TwitterClientSecret != "" &&
 		c.TwitterRedirectURL != ""
+}
+
+// FacebookEnabled reports whether all three Facebook Login fields are set.
+// Like Twitter OAuth, Facebook is optional — the server starts without it and
+// gracefully disables the connect routes when it is absent.
+func (c *Config) FacebookEnabled() bool {
+	return c.FacebookAppID != "" &&
+		c.FacebookAppSecret != "" &&
+		c.FacebookRedirectURL != ""
 }
 
 // validate returns an error if any required field is missing.

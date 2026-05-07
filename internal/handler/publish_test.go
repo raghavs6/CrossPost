@@ -23,6 +23,7 @@ func seedTwitterAccount(t *testing.T, db *gorm.DB, userID uint, accessToken stri
 		UserID:         userID,
 		Platform:       "twitter",
 		PlatformUserID: "999",
+		DisplayName:    "Tester",
 		Username:       "tester",
 		AccessToken:    accessToken,
 		TokenExpiry:    expiry,
@@ -222,4 +223,3 @@ func TestPublishTwitterAPIError(t *testing.T) {
 		t.Errorf("expected DB status 'failed', got %q", reloaded.Status)
 	}
 }
-

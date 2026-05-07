@@ -72,6 +72,9 @@ func TestLoad_DefaultLocalOAuthHosts(t *testing.T) {
 	if cfg.TwitterRedirectURL != "http://127.0.0.1:8080/api/auth/twitter/callback" {
 		t.Errorf("expected default TwitterRedirectURL to use 127.0.0.1, got %q", cfg.TwitterRedirectURL)
 	}
+	if cfg.FacebookRedirectURL != "http://127.0.0.1:8080/api/auth/facebook/callback" {
+		t.Errorf("expected default FacebookRedirectURL to use 127.0.0.1, got %q", cfg.FacebookRedirectURL)
+	}
 }
 
 func TestLoad_MissingRequired(t *testing.T) {
@@ -140,5 +143,38 @@ func TestRedisAddr(t *testing.T) {
 	expected := "localhost:6379"
 	if cfg.RedisAddr() != expected {
 		t.Errorf("expected RedisAddr %q, got %q", expected, cfg.RedisAddr())
+	}
+}
+
+func TestOptionalSocialOAuthEnabled(t *testing.T) {
+	setEnv(t, validEnv)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.TwitterEnabled() {
+		t.Fatal("expected TwitterEnabled to be false when TWITTER_* vars are unset")
+	}
+	if cfg.FacebookEnabled() {
+		t.Fatal("expected FacebookEnabled to be false when FACEBOOK_* vars are unset")
+	}
+
+	t.Setenv("TWITTER_CLIENT_ID", "twitter-id")
+	t.Setenv("TWITTER_CLIENT_SECRET", "twitter-secret")
+	t.Setenv("FACEBOOK_APP_ID", "facebook-id")
+	t.Setenv("FACEBOOK_APP_SECRET", "facebook-secret")
+
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("unexpected error after setting optional vars: %v", err)
+	}
+
+	if !cfg.TwitterEnabled() {
+		t.Fatal("expected TwitterEnabled to be true when TWITTER_* vars are set")
+	}
+	if !cfg.FacebookEnabled() {
+		t.Fatal("expected FacebookEnabled to be true when FACEBOOK_* vars are set")
 	}
 }

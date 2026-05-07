@@ -173,6 +173,14 @@ describe('DashboardPage', () => {
     expect(await screen.findByText('Connect X')).toBeInTheDocument()
   })
 
+  it('shows Connect Facebook button when Facebook is not connected', async () => {
+    vi.mocked(postsApi.listPosts).mockResolvedValue([])
+
+    renderDashboard()
+
+    expect(await screen.findByText('Connect Facebook')).toBeInTheDocument()
+  })
+
   it('starts X connection by fetching the auth URL and redirecting the browser', async () => {
     vi.mocked(postsApi.listPosts).mockResolvedValue([])
     vi.mocked(connectionsApi.beginTwitterConnection).mockResolvedValue(
@@ -197,6 +205,7 @@ describe('DashboardPage', () => {
 
     const mockConnection: SocialConnection = {
       platform: 'twitter',
+      display_name: 'My Twitter',
       username: 'mytwitterhandle',
       connected_at: '2025-01-01T00:00:00.000Z',
     }
@@ -208,5 +217,40 @@ describe('DashboardPage', () => {
     expect(await screen.findByText(/Connected ✓ @mytwitterhandle/)).toBeInTheDocument()
     // The Connect X button should not appear when already linked.
     expect(screen.queryByText('Connect X')).not.toBeInTheDocument()
+  })
+
+  it('starts Facebook connection by fetching the auth URL and redirecting the browser', async () => {
+    vi.mocked(postsApi.listPosts).mockResolvedValue([])
+    vi.mocked(connectionsApi.beginFacebookConnection).mockResolvedValue(
+      'https://facebook.example/dialog/oauth?state=test',
+    )
+    vi.mocked(connectionsApi.redirectToExternalURL).mockImplementation(() => {})
+
+    renderDashboard()
+
+    fireEvent.click(await screen.findByText('Connect Facebook'))
+
+    await waitFor(() => {
+      expect(connectionsApi.beginFacebookConnection).toHaveBeenCalledTimes(1)
+      expect(connectionsApi.redirectToExternalURL).toHaveBeenCalledWith(
+        'https://facebook.example/dialog/oauth?state=test',
+      )
+    })
+  })
+
+  it('shows Facebook connected status when account is linked', async () => {
+    vi.mocked(postsApi.listPosts).mockResolvedValue([])
+
+    const mockConnection: SocialConnection = {
+      platform: 'facebook',
+      display_name: 'Ada Lovelace',
+      connected_at: '2025-01-01T00:00:00.000Z',
+    }
+    vi.mocked(connectionsApi.listConnections).mockResolvedValue([mockConnection])
+
+    renderDashboard()
+
+    expect(await screen.findByText(/Connected Facebook ✓ Ada Lovelace/)).toBeInTheDocument()
+    expect(screen.queryByText('Connect Facebook')).not.toBeInTheDocument()
   })
 })

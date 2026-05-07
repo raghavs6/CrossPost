@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"time"
 
 	"golang.org/x/oauth2"
 	"gorm.io/gorm"
@@ -179,6 +178,7 @@ func (h *TwitterAuthHandler) TwitterCallback(w http.ResponseWriter, r *http.Requ
 	result := h.db.Where(model.SocialAccount{UserID: userID, Platform: "twitter"}).
 		Assign(model.SocialAccount{
 			PlatformUserID: twitterUser.ID,
+			DisplayName:    twitterUser.Name,
 			Username:       twitterUser.Username,
 			AccessToken:    token.AccessToken,
 			RefreshToken:   refreshToken,
@@ -191,13 +191,6 @@ func (h *TwitterAuthHandler) TwitterCallback(w http.ResponseWriter, r *http.Requ
 	}
 
 	http.Redirect(w, r, h.frontendURL+"/dashboard?twitter=connected", http.StatusFound)
-}
-
-// ConnectionResponse is the JSON shape ListConnections returns to the frontend.
-type ConnectionResponse struct {
-	Platform    string    `json:"platform"`
-	Username    string    `json:"username"`
-	ConnectedAt time.Time `json:"connected_at"`
 }
 
 // ListConnections handles GET /api/connections (protected — RequireAuth must run first).
@@ -217,6 +210,7 @@ func (h *TwitterAuthHandler) ListConnections(w http.ResponseWriter, r *http.Requ
 	for _, a := range accounts {
 		connections = append(connections, ConnectionResponse{
 			Platform:    a.Platform,
+			DisplayName: a.DisplayName,
 			Username:    a.Username,
 			ConnectedAt: a.CreatedAt,
 		})

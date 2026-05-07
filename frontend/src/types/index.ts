@@ -19,7 +19,8 @@ export type Platform = 'twitter' | 'linkedin' | 'facebook' | 'instagram'
 // GET /api/connections.  Field names match the backend's snake_case JSON keys.
 export interface SocialConnection {
   platform: Platform
-  username: string
+  display_name: string
+  username?: string
   connected_at: string
 }
 

@@ -2,7 +2,12 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { listPosts, createPost, deletePost } from '../api/posts'
-import { listConnections, beginTwitterConnection, redirectToExternalURL } from '../api/connections'
+import {
+  listConnections,
+  beginTwitterConnection,
+  beginFacebookConnection,
+  redirectToExternalURL,
+} from '../api/connections'
 import type { Platform, Post, SocialConnection } from '../types'
 
 // ── SVG Icons ────────────────────────────────────────────────────────────────
@@ -194,7 +199,17 @@ export default function DashboardPage() {
     }
   }
 
+  async function handleFacebookConnect() {
+    try {
+      const authorizationURL = await beginFacebookConnection()
+      redirectToExternalURL(authorizationURL)
+    } catch {
+      alert('Failed to start Facebook connection. Please try again.')
+    }
+  }
+
   const twitterConnection = connections.find((c) => c.platform === 'twitter')
+  const facebookConnection = connections.find((c) => c.platform === 'facebook')
 
   return (
     <div
@@ -321,6 +336,41 @@ export default function DashboardPage() {
         </div>
 
         {/* Section F — Scheduled posts list */}
+        <div className="flex flex-col gap-4 rounded-xl bg-white/5 border border-white/10 px-5 py-4">
+          <h2 className="text-xs font-semibold tracking-[0.2em] text-white/60 uppercase">
+            Connected Accounts
+          </h2>
+          <div className="flex flex-wrap gap-3">
+            {twitterConnection ? (
+              <div className="rounded-full border border-white/15 px-4 py-2 text-sm text-white/80">
+                Connected ✓ @{twitterConnection.username}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleTwitterConnect}
+                className="rounded-full border border-white/20 px-4 py-2 text-sm text-white/70 hover:border-white/50 hover:text-white transition-colors duration-200"
+              >
+                Connect X
+              </button>
+            )}
+
+            {facebookConnection ? (
+              <div className="rounded-full border border-white/15 px-4 py-2 text-sm text-white/80">
+                Connected Facebook ✓ {facebookConnection.display_name}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleFacebookConnect}
+                className="rounded-full border border-white/20 px-4 py-2 text-sm text-white/70 hover:border-white/50 hover:text-white transition-colors duration-200"
+              >
+                Connect Facebook
+              </button>
+            )}
+          </div>
+        </div>
+
         <div className="flex flex-col gap-4">
           <h2 className="text-xs font-semibold tracking-[0.2em] text-white/60 uppercase">
             Scheduled Posts
@@ -383,34 +433,6 @@ export default function DashboardPage() {
               </p>
             </div>
           ))}
-        </div>
-
-        {/* Section G — Platform Connections */}
-        <div className="flex flex-col gap-4">
-          <h2 className="text-xs font-semibold tracking-[0.2em] text-white/60 uppercase">
-            Platform Connections
-          </h2>
-
-          {/* X (Twitter) row */}
-          <div className="flex items-center justify-between rounded-xl bg-white/5 border border-white/10 px-5 py-4">
-            <div className="flex items-center gap-2 text-sm text-white/70">
-              <XIcon />
-              X (Twitter)
-            </div>
-            {twitterConnection ? (
-              <span className="text-sm text-green-400">
-                Connected ✓ @{twitterConnection.username}
-              </span>
-            ) : (
-              <button
-                type="button"
-                onClick={handleTwitterConnect}
-                className="text-sm text-white/60 hover:text-white border border-white/20 hover:border-white/50 rounded-full px-4 py-1 transition-colors duration-200"
-              >
-                Connect X
-              </button>
-            )}
-          </div>
         </div>
 
       </div>

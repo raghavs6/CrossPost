@@ -158,6 +158,9 @@ func TestTwitterCallback_StoresSocialAccount(t *testing.T) {
 	if account.Username != "twitteruser" {
 		t.Errorf("expected username=twitteruser, got %q", account.Username)
 	}
+	if account.DisplayName != "Test User" {
+		t.Errorf("expected display_name=Test User, got %q", account.DisplayName)
+	}
 	if account.PlatformUserID != "twitter-456" {
 		t.Errorf("expected platform_user_id=twitter-456, got %q", account.PlatformUserID)
 	}
@@ -207,6 +210,7 @@ func TestListConnections_ReturnsConnectedPlatforms(t *testing.T) {
 		UserID:         1,
 		Platform:       "twitter",
 		PlatformUserID: "twitter-111",
+		DisplayName:    "My Handle",
 		Username:       "myhandle",
 		AccessToken:    "some-token",
 	})
@@ -230,6 +234,9 @@ func TestListConnections_ReturnsConnectedPlatforms(t *testing.T) {
 	}
 	if connections[0].Username != "myhandle" {
 		t.Errorf("expected username=myhandle, got %q", connections[0].Username)
+	}
+	if connections[0].DisplayName != "My Handle" {
+		t.Errorf("expected display_name=My Handle, got %q", connections[0].DisplayName)
 	}
 }
 
