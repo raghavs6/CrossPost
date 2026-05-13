@@ -16,14 +16,18 @@ import (
 )
 
 const (
-	facebookDefaultAuthURL    = "https://www.facebook.com/v23.0/dialog/oauth"
-	facebookDefaultTokenURL   = "https://graph.facebook.com/v23.0/oauth/access_token"
-	facebookDefaultProfileURL = "https://graph.facebook.com/me?fields=id,name"
+	facebookGraphVersion      = "v24.0"
+	facebookDefaultAuthURL    = "https://www.facebook.com/" + facebookGraphVersion + "/dialog/oauth"
+	facebookDefaultTokenURL   = "https://graph.facebook.com/" + facebookGraphVersion + "/oauth/access_token"
+	facebookDefaultProfileURL = "https://graph.facebook.com/" + facebookGraphVersion + "/me?fields=id,name"
+	facebookDefaultPagesURL   = "https://graph.facebook.com/" + facebookGraphVersion + "/me/accounts?fields=id,name,access_token"
+	facebookPendingCookieName = "facebook_pending_flow_id"
+	facebookPendingLinkMaxAge = 10 * time.Minute
 )
 
 // FacebookAuthHandler owns the Facebook Login account-linking flow.
 // Unlike Google login, this does not authenticate into CrossPost itself —
-// it links a Facebook account to an already-authenticated CrossPost user.
+// it links a Facebook Page to an already-authenticated CrossPost user.
 type FacebookAuthHandler struct {
 	appID       string
 	appSecret   string
@@ -33,6 +37,7 @@ type FacebookAuthHandler struct {
 	authURL     string
 	tokenURL    string
 	profileURL  string
+	pagesURL    string
 	frontendURL string
 }
 
@@ -47,6 +52,7 @@ func NewFacebookAuthHandler(cfg *config.Config, db *gorm.DB) *FacebookAuthHandle
 		authURL:     facebookDefaultAuthURL,
 		tokenURL:    facebookDefaultTokenURL,
 		profileURL:  facebookDefaultProfileURL,
+		pagesURL:    facebookDefaultPagesURL,
 		frontendURL: cfg.FrontendURL,
 	}
 }
@@ -78,8 +84,9 @@ func (h *FacebookAuthHandler) FacebookLogin(w http.ResponseWriter, r *http.Reque
 	})
 }
 
-// FacebookCallback exchanges the code for a token, fetches the user's profile,
-// stores the linked account, and redirects back to the dashboard.
+// FacebookCallback exchanges the OAuth code for a user token, fetches the
+// user's manageable Pages, stores those Page choices server-side, and then
+// redirects back to the dashboard so the user can choose one Page.
 func (h *FacebookAuthHandler) FacebookCallback(w http.ResponseWriter, r *http.Request) {
 	stateCookie, err := r.Cookie("facebook_state")
 	if err != nil || r.URL.Query().Get("state") != stateCookie.Value {
@@ -110,26 +117,132 @@ func (h *FacebookAuthHandler) FacebookCallback(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	token, expiresAt, err := h.exchangeCode(code)
+	userToken, err := h.exchangeCode(code)
 	if err != nil {
 		http.Error(w, "failed to exchange token", http.StatusInternalServerError)
 		return
 	}
 
-	profile, err := h.fetchFacebookProfile(token)
+	profile, err := h.fetchFacebookProfile(userToken)
 	if err != nil {
 		http.Error(w, "failed to fetch facebook user info", http.StatusInternalServerError)
 		return
 	}
 
+	pages, err := h.fetchFacebookPages(userToken)
+	if err != nil {
+		http.Error(w, "failed to fetch facebook pages", http.StatusInternalServerError)
+		return
+	}
+	if len(pages) == 0 {
+		http.Error(w, "no manageable facebook pages found", http.StatusPreconditionFailed)
+		return
+	}
+
+	flowID, err := generateState()
+	if err != nil {
+		http.Error(w, "failed to generate facebook page selection state", http.StatusInternalServerError)
+		return
+	}
+
+	expiresAt := time.Now().Add(facebookPendingLinkMaxAge)
+	h.cleanupExpiredPendingLinks()
+	if err := h.db.Where("user_id = ?", userID).Delete(&model.PendingFacebookPageLink{}).Error; err != nil {
+		http.Error(w, "failed to clear previous facebook page choices", http.StatusInternalServerError)
+		return
+	}
+
+	pendingRows := make([]model.PendingFacebookPageLink, 0, len(pages))
+	for _, page := range pages {
+		pendingRows = append(pendingRows, model.PendingFacebookPageLink{
+			FlowID:           flowID,
+			UserID:           userID,
+			FacebookUserID:   profile.ID,
+			FacebookUserName: profile.Name,
+			PageID:           page.ID,
+			PageName:         page.Name,
+			PageAccessToken:  page.AccessToken,
+			ExpiresAt:        expiresAt,
+		})
+	}
+	if err := h.db.Create(&pendingRows).Error; err != nil {
+		http.Error(w, "failed to store facebook page choices", http.StatusInternalServerError)
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     facebookPendingCookieName,
+		Value:    flowID,
+		MaxAge:   int(facebookPendingLinkMaxAge.Seconds()),
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Path:     "/",
+	})
+
+	http.Redirect(w, r, h.frontendURL+"/dashboard?facebook=select", http.StatusFound)
+}
+
+// ListPendingFacebookPages returns the short-lived list of Facebook Pages the
+// user can choose from after the OAuth callback succeeds.
+func (h *FacebookAuthHandler) ListPendingFacebookPages(w http.ResponseWriter, r *http.Request) {
+	links, err := h.loadPendingLinks(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	resp := make([]FacebookPageOptionResponse, 0, len(links))
+	for _, link := range links {
+		resp = append(resp, FacebookPageOptionResponse{
+			ID:   link.PageID,
+			Name: link.PageName,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// SelectFacebookPage finalises the account link by moving one pending Page
+// choice into social_accounts and clearing the short-lived selection state.
+func (h *FacebookAuthHandler) SelectFacebookPage(w http.ResponseWriter, r *http.Request) {
+	var req SelectFacebookPageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.PageID == "" {
+		http.Error(w, "page_id is required", http.StatusBadRequest)
+		return
+	}
+
+	links, err := h.loadPendingLinks(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	var selected *model.PendingFacebookPageLink
+	for i := range links {
+		if links[i].PageID == req.PageID {
+			selected = &links[i]
+			break
+		}
+	}
+	if selected == nil {
+		http.Error(w, "facebook page not found in pending choices", http.StatusNotFound)
+		return
+	}
+
 	var account model.SocialAccount
-	result := h.db.Where(model.SocialAccount{UserID: userID, Platform: "facebook"}).
+	result := h.db.Where(model.SocialAccount{UserID: selected.UserID, Platform: "facebook"}).
 		Assign(model.SocialAccount{
-			PlatformUserID: profile.ID,
-			DisplayName:    profile.Name,
-			Username:       "",
-			AccessToken:    token,
-			TokenExpiry:    expiresAt,
+			PlatformUserID:    selected.FacebookUserID,
+			PlatformAccountID: selected.PageID,
+			DisplayName:       selected.PageName,
+			Username:          "",
+			AccessToken:       selected.PageAccessToken,
+			TokenExpiry:       time.Time{},
 		}).
 		FirstOrCreate(&account)
 	if result.Error != nil {
@@ -137,7 +250,20 @@ func (h *FacebookAuthHandler) FacebookCallback(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	http.Redirect(w, r, h.frontendURL+"/dashboard?facebook=connected", http.StatusFound)
+	if err := h.db.Where("flow_id = ? AND user_id = ?", selected.FlowID, selected.UserID).
+		Delete(&model.PendingFacebookPageLink{}).Error; err != nil {
+		http.Error(w, "failed to clear pending facebook page choices", http.StatusInternalServerError)
+		return
+	}
+
+	h.clearPendingFacebookCookie(w)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(ConnectionResponse{
+		Platform:    "facebook",
+		DisplayName: selected.PageName,
+		ConnectedAt: account.CreatedAt,
+	})
 }
 
 // ConnectionResponse is the JSON shape ListConnections returns to the frontend.
@@ -146,6 +272,18 @@ type ConnectionResponse struct {
 	DisplayName string    `json:"display_name"`
 	Username    string    `json:"username,omitempty"`
 	ConnectedAt time.Time `json:"connected_at"`
+}
+
+// FacebookPageOptionResponse is the page picker data returned to the dashboard.
+type FacebookPageOptionResponse struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// SelectFacebookPageRequest is the protected request body used to confirm one
+// of the pending Facebook Pages after OAuth succeeds.
+type SelectFacebookPageRequest struct {
+	PageID string `json:"page_id"`
 }
 
 func (h *FacebookAuthHandler) configured() bool {
@@ -159,7 +297,7 @@ func (h *FacebookAuthHandler) authorizationURL(state string) string {
 	q.Set("redirect_uri", h.redirectURL)
 	q.Set("state", state)
 	q.Set("response_type", "code")
-	q.Set("scope", "public_profile,pages_show_list,pages_read_engagement,pages_manage_posts")
+	q.Set("scope", "public_profile,pages_show_list,pages_read_engagement,pages_manage_posts,business_management")
 	u.RawQuery = q.Encode()
 	return u.String()
 }
@@ -167,10 +305,9 @@ func (h *FacebookAuthHandler) authorizationURL(state string) string {
 type facebookTokenResponse struct {
 	AccessToken string `json:"access_token"`
 	TokenType   string `json:"token_type"`
-	ExpiresIn   int64  `json:"expires_in"`
 }
 
-func (h *FacebookAuthHandler) exchangeCode(code string) (string, time.Time, error) {
+func (h *FacebookAuthHandler) exchangeCode(code string) (string, error) {
 	u, _ := url.Parse(h.tokenURL)
 	q := u.Query()
 	q.Set("client_id", h.appID)
@@ -181,33 +318,28 @@ func (h *FacebookAuthHandler) exchangeCode(code string) (string, time.Time, erro
 
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
-		return "", time.Time{}, fmt.Errorf("failed to build token request: %w", err)
+		return "", fmt.Errorf("failed to build token request: %w", err)
 	}
 
 	resp, err := h.httpClient.Do(req)
 	if err != nil {
-		return "", time.Time{}, fmt.Errorf("token request failed: %w", err)
+		return "", fmt.Errorf("token request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", time.Time{}, fmt.Errorf("token endpoint returned %d", resp.StatusCode)
+		return "", fmt.Errorf("token endpoint returned %d", resp.StatusCode)
 	}
 
 	var tokenResp facebookTokenResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
-		return "", time.Time{}, fmt.Errorf("failed to decode token response: %w", err)
+		return "", fmt.Errorf("failed to decode token response: %w", err)
 	}
 	if tokenResp.AccessToken == "" {
-		return "", time.Time{}, fmt.Errorf("facebook returned no access token")
+		return "", fmt.Errorf("facebook returned no access token")
 	}
 
-	var expiresAt time.Time
-	if tokenResp.ExpiresIn > 0 {
-		expiresAt = time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
-	}
-
-	return tokenResp.AccessToken, expiresAt, nil
+	return tokenResp.AccessToken, nil
 }
 
 type facebookProfile struct {
@@ -216,15 +348,11 @@ type facebookProfile struct {
 }
 
 func (h *FacebookAuthHandler) fetchFacebookProfile(accessToken string) (*facebookProfile, error) {
-	u, _ := url.Parse(h.profileURL)
-	q := u.Query()
-	q.Set("access_token", accessToken)
-	u.RawQuery = q.Encode()
-
-	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	req, err := http.NewRequest(http.MethodGet, h.profileURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build profile request: %w", err)
 	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
 
 	resp, err := h.httpClient.Do(req)
 	if err != nil {
@@ -245,4 +373,82 @@ func (h *FacebookAuthHandler) fetchFacebookProfile(accessToken string) (*faceboo
 	}
 
 	return &profile, nil
+}
+
+type facebookPage struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	AccessToken string `json:"access_token"`
+}
+
+type facebookPagesResponse struct {
+	Data []facebookPage `json:"data"`
+}
+
+func (h *FacebookAuthHandler) fetchFacebookPages(accessToken string) ([]facebookPage, error) {
+	req, err := http.NewRequest(http.MethodGet, h.pagesURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build pages request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+
+	resp, err := h.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("facebook pages request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("facebook pages returned status %d", resp.StatusCode)
+	}
+
+	var result facebookPagesResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode facebook pages: %w", err)
+	}
+
+	pages := make([]facebookPage, 0, len(result.Data))
+	for _, page := range result.Data {
+		if page.ID == "" || page.Name == "" || page.AccessToken == "" {
+			continue
+		}
+		pages = append(pages, page)
+	}
+
+	return pages, nil
+}
+
+func (h *FacebookAuthHandler) loadPendingLinks(r *http.Request) ([]model.PendingFacebookPageLink, error) {
+	flowCookie, err := r.Cookie(facebookPendingCookieName)
+	if err != nil || flowCookie.Value == "" {
+		return nil, fmt.Errorf("no pending facebook page selection found")
+	}
+
+	userID := middleware.UserIDFromContext(r.Context())
+	h.cleanupExpiredPendingLinks()
+
+	var links []model.PendingFacebookPageLink
+	if err := h.db.Where("flow_id = ? AND user_id = ? AND expires_at > ?", flowCookie.Value, userID, time.Now()).
+		Order("page_name asc").
+		Find(&links).Error; err != nil {
+		return nil, fmt.Errorf("failed to load pending facebook page choices")
+	}
+	if len(links) == 0 {
+		return nil, fmt.Errorf("no pending facebook page selection found")
+	}
+
+	return links, nil
+}
+
+func (h *FacebookAuthHandler) cleanupExpiredPendingLinks() {
+	h.db.Where("expires_at <= ?", time.Now()).Delete(&model.PendingFacebookPageLink{})
+}
+
+func (h *FacebookAuthHandler) clearPendingFacebookCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:   facebookPendingCookieName,
+		Value:  "",
+		MaxAge: -1,
+		Path:   "/",
+	})
 }

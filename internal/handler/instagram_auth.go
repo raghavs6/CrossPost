@@ -130,11 +130,12 @@ func (h *InstagramAuthHandler) InstagramCallback(w http.ResponseWriter, r *http.
 	var account model.SocialAccount
 	result := h.db.Where(model.SocialAccount{UserID: userID, Platform: "instagram"}).
 		Assign(model.SocialAccount{
-			PlatformUserID: profile.UserID,
-			DisplayName:    displayName,
-			Username:       profile.Username,
-			AccessToken:    token,
-			TokenExpiry:    expiresAt,
+			PlatformUserID:    profile.UserID,
+			PlatformAccountID: profile.UserID,
+			DisplayName:       displayName,
+			Username:          profile.Username,
+			AccessToken:       token,
+			TokenExpiry:       expiresAt,
 		}).
 		FirstOrCreate(&account)
 	if result.Error != nil {

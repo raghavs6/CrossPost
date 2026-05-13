@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { listPosts, createPost, deletePost } from '../api/posts'
 import {
@@ -7,9 +7,11 @@ import {
   beginTwitterConnection,
   beginFacebookConnection,
   beginInstagramConnection,
+  listPendingFacebookPages,
   redirectToExternalURL,
+  selectFacebookPage,
 } from '../api/connections'
-import type { Platform, Post, SocialConnection } from '../types'
+import type { FacebookPageOption, Platform, Post, SocialConnection } from '../types'
 
 // ── SVG Icons ────────────────────────────────────────────────────────────────
 
@@ -83,6 +85,7 @@ const STATUS_STYLES: Record<Post['status'], string> = {
 export default function DashboardPage() {
   const { logout } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
 
   // Form state
   const [content, setContent] = useState('')
@@ -99,6 +102,10 @@ export default function DashboardPage() {
 
   // Connections state — which social accounts this user has linked.
   const [connections, setConnections] = useState<SocialConnection[]>([])
+  const [pendingFacebookPages, setPendingFacebookPages] = useState<FacebookPageOption[]>([])
+  const [isLoadingFacebookPages, setIsLoadingFacebookPages] = useState(false)
+  const [facebookSelectionError, setFacebookSelectionError] = useState<string | null>(null)
+  const [isSelectingFacebookPage, setIsSelectingFacebookPage] = useState(false)
 
   // Fetch the user's posts once, right after the component mounts.
   // The empty dependency array [] means this effect runs only once.
@@ -117,6 +124,24 @@ export default function DashboardPage() {
       .then(setConnections)
       .catch(() => {})
   }, [])
+
+  useEffect(() => {
+    if (searchParams.get('facebook') !== 'select') {
+      setPendingFacebookPages([])
+      setFacebookSelectionError(null)
+      return
+    }
+
+    setIsLoadingFacebookPages(true)
+    setFacebookSelectionError(null)
+    listPendingFacebookPages()
+      .then(setPendingFacebookPages)
+      .catch(() => {
+        setPendingFacebookPages([])
+        setFacebookSelectionError('Failed to load Facebook Pages. Please reconnect Facebook.')
+      })
+      .finally(() => setIsLoadingFacebookPages(false))
+  }, [searchParams])
 
   function handleLogout() {
     logout()
@@ -215,6 +240,22 @@ export default function DashboardPage() {
       redirectToExternalURL(authorizationURL)
     } catch {
       alert('Failed to start Instagram connection. Please try again.')
+    }
+  }
+
+  async function handleFacebookPageSelection(pageID: string) {
+    setIsSelectingFacebookPage(true)
+    setFacebookSelectionError(null)
+    try {
+      await selectFacebookPage(pageID)
+      const refreshedConnections = await listConnections()
+      setConnections(refreshedConnections)
+      setPendingFacebookPages([])
+      navigate('/dashboard', { replace: true })
+    } catch {
+      setFacebookSelectionError('Failed to connect that Facebook Page. Please try again.')
+    } finally {
+      setIsSelectingFacebookPage(false)
     }
   }
 
@@ -351,6 +392,39 @@ export default function DashboardPage() {
           <h2 className="text-xs font-semibold tracking-[0.2em] text-white/60 uppercase">
             Connected Accounts
           </h2>
+          {(searchParams.get('facebook') === 'select' || pendingFacebookPages.length > 0 || facebookSelectionError) && (
+            <div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 px-4 py-4">
+              <div className="flex flex-col gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-white">Choose a Facebook Page</p>
+                  <p className="text-xs text-white/50">
+                    Facebook authorisation succeeded. Pick the Page CrossPost should publish to.
+                  </p>
+                </div>
+                {isLoadingFacebookPages && (
+                  <p className="text-sm text-white/50">Loading Facebook Pages…</p>
+                )}
+                {facebookSelectionError && (
+                  <p className="text-sm text-red-400">{facebookSelectionError}</p>
+                )}
+                {pendingFacebookPages.length > 0 && (
+                  <div className="flex flex-wrap gap-3">
+                    {pendingFacebookPages.map((page) => (
+                      <button
+                        key={page.id}
+                        type="button"
+                        onClick={() => handleFacebookPageSelection(page.id)}
+                        disabled={isSelectingFacebookPage}
+                        className="rounded-full border border-white/20 px-4 py-2 text-sm text-white/80 hover:border-white/50 hover:text-white transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isSelectingFacebookPage ? 'Connecting…' : `Use ${page.name}`}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
           <div className="flex flex-wrap gap-3">
             {twitterConnection ? (
               <div className="rounded-full border border-white/15 px-4 py-2 text-sm text-white/80">

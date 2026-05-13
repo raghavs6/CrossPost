@@ -36,7 +36,7 @@ const mockPost: Post = {
 
 // Renders DashboardPage inside a MemoryRouter (required because the component
 // calls useNavigate) with a mock authenticated user.
-function renderDashboard() {
+function renderDashboard(initialEntry = '/dashboard') {
   vi.mocked(AuthContextModule.useAuth).mockReturnValue({
     isAuthenticated: true,
     user: null,
@@ -44,7 +44,7 @@ function renderDashboard() {
     logout: vi.fn(),
   })
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <DashboardPage />
     </MemoryRouter>,
   )
@@ -57,6 +57,12 @@ describe('DashboardPage', () => {
     vi.clearAllMocks()
     // Default: no linked social accounts.  Individual tests can override this.
     vi.mocked(connectionsApi.listConnections).mockResolvedValue([])
+    vi.mocked(connectionsApi.listPendingFacebookPages).mockResolvedValue([])
+    vi.mocked(connectionsApi.selectFacebookPage).mockResolvedValue({
+      platform: 'facebook',
+      display_name: 'CrossPost Bakery',
+      connected_at: '2025-01-01T00:00:00.000Z',
+    })
   })
 
   it('shows loading state initially', () => {
@@ -260,6 +266,46 @@ describe('DashboardPage', () => {
 
     expect(await screen.findByText(/Connected Facebook ✓ Ada Lovelace/)).toBeInTheDocument()
     expect(screen.queryByText('Connect Facebook')).not.toBeInTheDocument()
+  })
+
+  it('loads pending Facebook pages when the dashboard is opened from the Facebook callback', async () => {
+    vi.mocked(postsApi.listPosts).mockResolvedValue([])
+    vi.mocked(connectionsApi.listPendingFacebookPages).mockResolvedValue([
+      { id: 'page-1', name: 'CrossPost Bakery' },
+      { id: 'page-2', name: 'CrossPost Cafe' },
+    ])
+
+    renderDashboard('/dashboard?facebook=select')
+
+    expect(await screen.findByText('Choose a Facebook Page')).toBeInTheDocument()
+    expect(connectionsApi.listPendingFacebookPages).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('Use CrossPost Bakery')).toBeInTheDocument()
+    expect(screen.getByText('Use CrossPost Cafe')).toBeInTheDocument()
+  })
+
+  it('selects a pending Facebook page and refreshes linked connections', async () => {
+    vi.mocked(postsApi.listPosts).mockResolvedValue([])
+    vi.mocked(connectionsApi.listPendingFacebookPages).mockResolvedValue([
+      { id: 'page-1', name: 'CrossPost Bakery' },
+    ])
+    vi.mocked(connectionsApi.listConnections)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          platform: 'facebook',
+          display_name: 'CrossPost Bakery',
+          connected_at: '2025-01-01T00:00:00.000Z',
+        },
+      ])
+
+    renderDashboard('/dashboard?facebook=select')
+
+    fireEvent.click(await screen.findByText('Use CrossPost Bakery'))
+
+    await waitFor(() => {
+      expect(connectionsApi.selectFacebookPage).toHaveBeenCalledWith('page-1')
+    })
+    expect(await screen.findByText(/Connected Facebook ✓ CrossPost Bakery/)).toBeInTheDocument()
   })
 
   it('starts Instagram connection by fetching the auth URL and redirecting the browser', async () => {

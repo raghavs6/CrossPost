@@ -6,11 +6,12 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/raghavs6/CrossPost/internal/model"
 )
 
-func setupFacebookHandler(t *testing.T, profileID, profileName string) *FacebookAuthHandler {
+func setupFacebookHandler(t *testing.T) *FacebookAuthHandler {
 	t.Helper()
 	db := setupTestDB(t)
 
@@ -24,14 +25,20 @@ func setupFacebookHandler(t *testing.T, profileID, profileName string) *Facebook
 				switch {
 				case strings.HasPrefix(r.URL.String(), "https://graph.facebook.test/oauth/access_token"):
 					return jsonResponse(http.StatusOK, map[string]any{
-						"access_token": "fake-facebook-token",
+						"access_token": "fake-facebook-user-token",
 						"token_type":   "bearer",
-						"expires_in":   3600,
 					}), nil
-				case strings.HasPrefix(r.URL.String(), "https://graph.facebook.test/me?"):
+				case strings.HasPrefix(r.URL.String(), "https://graph.facebook.test/me?fields=id,name"):
 					return jsonResponse(http.StatusOK, facebookProfile{
-						ID:   profileID,
-						Name: profileName,
+						ID:   "fb-user-123",
+						Name: "Ada Lovelace",
+					}), nil
+				case strings.HasPrefix(r.URL.String(), "https://graph.facebook.test/me/accounts?fields=id,name,access_token"):
+					return jsonResponse(http.StatusOK, facebookPagesResponse{
+						Data: []facebookPage{
+							{ID: "page-1", Name: "CrossPost Bakery", AccessToken: "page-token-1"},
+							{ID: "page-2", Name: "CrossPost Cafe", AccessToken: "page-token-2"},
+						},
 					}), nil
 				default:
 					return jsonResponse(http.StatusNotFound, map[string]string{"error": "not found"}), nil
@@ -41,12 +48,13 @@ func setupFacebookHandler(t *testing.T, profileID, profileName string) *Facebook
 		authURL:     "https://www.facebook.test/dialog/oauth",
 		tokenURL:    "https://graph.facebook.test/oauth/access_token",
 		profileURL:  "https://graph.facebook.test/me?fields=id,name",
+		pagesURL:    "https://graph.facebook.test/me/accounts?fields=id,name,access_token",
 		frontendURL: "http://127.0.0.1:5173",
 	}
 }
 
 func TestFacebookLogin_ReturnsAuthorizationURL(t *testing.T) {
-	h := setupFacebookHandler(t, "fb-123", "Ada Lovelace")
+	h := setupFacebookHandler(t)
 
 	req := newPostRequest(t, http.MethodGet, "/api/auth/facebook", nil, 1, "")
 	w := runWithAuth(h.FacebookLogin, req)
@@ -82,8 +90,8 @@ func TestFacebookLogin_ReturnsAuthorizationURL(t *testing.T) {
 	}
 }
 
-func TestFacebookCallback_StoresSocialAccount(t *testing.T) {
-	h := setupFacebookHandler(t, "fb-456", "Grace Hopper")
+func TestFacebookCallback_StoresPendingPages(t *testing.T) {
+	h := setupFacebookHandler(t)
 
 	state := "facebook-state"
 	req := httptest.NewRequest(http.MethodGet,
@@ -99,30 +107,38 @@ func TestFacebookCallback_StoresSocialAccount(t *testing.T) {
 		t.Fatalf("expected 302 redirect, got %d (body: %s)", resp.StatusCode, w.Body.String())
 	}
 	location := resp.Header.Get("Location")
-	if !strings.Contains(location, "/dashboard?facebook=connected") {
-		t.Fatalf("expected redirect to /dashboard?facebook=connected, got %q", location)
+	if !strings.Contains(location, "/dashboard?facebook=select") {
+		t.Fatalf("expected redirect to /dashboard?facebook=select, got %q", location)
 	}
 
-	var account model.SocialAccount
-	if err := h.db.Where("user_id = ? AND platform = ?", 1, "facebook").First(&account).Error; err != nil {
-		t.Fatalf("expected social_accounts row to exist, got error: %v", err)
+	var links []model.PendingFacebookPageLink
+	if err := h.db.Where("user_id = ?", 1).Order("page_id asc").Find(&links).Error; err != nil {
+		t.Fatalf("expected pending rows to exist, got error: %v", err)
 	}
-	if account.DisplayName != "Grace Hopper" {
-		t.Errorf("expected display_name=Grace Hopper, got %q", account.DisplayName)
+	if len(links) != 2 {
+		t.Fatalf("expected 2 pending rows, got %d", len(links))
 	}
-	if account.Username != "" {
-		t.Errorf("expected empty username for facebook account, got %q", account.Username)
+	if links[0].FacebookUserID != "fb-user-123" {
+		t.Errorf("expected facebook user id to be stored, got %q", links[0].FacebookUserID)
 	}
-	if account.PlatformUserID != "fb-456" {
-		t.Errorf("expected platform_user_id=fb-456, got %q", account.PlatformUserID)
+	if links[0].PageAccessToken == "" {
+		t.Error("expected page access token to be stored")
 	}
-	if account.AccessToken != "fake-facebook-token" {
-		t.Errorf("expected access_token=fake-facebook-token, got %q", account.AccessToken)
+
+	cookies := resp.Cookies()
+	foundPendingCookie := false
+	for _, c := range cookies {
+		if c.Name == facebookPendingCookieName && c.Value != "" {
+			foundPendingCookie = true
+		}
+	}
+	if !foundPendingCookie {
+		t.Fatal("expected pending facebook flow cookie to be set")
 	}
 }
 
 func TestFacebookCallback_StateMismatch_Returns400(t *testing.T) {
-	h := setupFacebookHandler(t, "fb-999", "Mallory")
+	h := setupFacebookHandler(t)
 
 	req := httptest.NewRequest(http.MethodGet,
 		"/api/auth/facebook/callback?code=fake-code&state=WRONG", nil)
@@ -138,7 +154,7 @@ func TestFacebookCallback_StateMismatch_Returns400(t *testing.T) {
 }
 
 func TestFacebookCallback_MissingCode_Returns400(t *testing.T) {
-	h := setupFacebookHandler(t, "fb-999", "Mallory")
+	h := setupFacebookHandler(t)
 
 	state := "facebook-state"
 	req := httptest.NewRequest(http.MethodGet,
@@ -154,30 +170,143 @@ func TestFacebookCallback_MissingCode_Returns400(t *testing.T) {
 	}
 }
 
-func TestFacebookCallback_RelinkUpdatesExistingRow(t *testing.T) {
-	h := setupFacebookHandler(t, "fb-777", "Updated Name")
+func TestListPendingFacebookPages_ReturnsPageChoices(t *testing.T) {
+	h := setupFacebookHandler(t)
+	flowID := "pending-flow"
+
+	for _, page := range []model.PendingFacebookPageLink{
+		{
+			FlowID:           flowID,
+			UserID:           1,
+			FacebookUserID:   "fb-user-123",
+			FacebookUserName: "Ada Lovelace",
+			PageID:           "page-2",
+			PageName:         "CrossPost Cafe",
+			PageAccessToken:  "page-token-2",
+			ExpiresAt:        time.Now().Add(5 * time.Minute),
+		},
+		{
+			FlowID:           flowID,
+			UserID:           1,
+			FacebookUserID:   "fb-user-123",
+			FacebookUserName: "Ada Lovelace",
+			PageID:           "page-1",
+			PageName:         "CrossPost Bakery",
+			PageAccessToken:  "page-token-1",
+			ExpiresAt:        time.Now().Add(5 * time.Minute),
+		},
+	} {
+		if err := h.db.Create(&page).Error; err != nil {
+			t.Fatalf("seed pending page: %v", err)
+		}
+	}
+
+	req := newPostRequest(t, http.MethodGet, "/api/auth/facebook/pages", nil, 1, "")
+	req.AddCookie(&http.Cookie{Name: facebookPendingCookieName, Value: flowID})
+	w := runWithAuth(h.ListPendingFacebookPages, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var pages []FacebookPageOptionResponse
+	if err := json.NewDecoder(w.Body).Decode(&pages); err != nil {
+		t.Fatalf("decode page options: %v", err)
+	}
+	if len(pages) != 2 {
+		t.Fatalf("expected 2 page options, got %d", len(pages))
+	}
+	if pages[0].Name != "CrossPost Bakery" {
+		t.Errorf("expected alphabetical ordering, got first page %q", pages[0].Name)
+	}
+}
+
+func TestSelectFacebookPage_StoresSocialAccountAndClearsPendingRows(t *testing.T) {
+	h := setupFacebookHandler(t)
+	flowID := "pending-flow"
+
+	if err := h.db.Create(&model.PendingFacebookPageLink{
+		FlowID:           flowID,
+		UserID:           1,
+		FacebookUserID:   "fb-user-123",
+		FacebookUserName: "Ada Lovelace",
+		PageID:           "page-1",
+		PageName:         "CrossPost Bakery",
+		PageAccessToken:  "page-token-1",
+		ExpiresAt:        time.Now().Add(5 * time.Minute),
+	}).Error; err != nil {
+		t.Fatalf("seed pending page: %v", err)
+	}
+
+	req := newPostRequest(t, http.MethodPost, "/api/auth/facebook/select-page", SelectFacebookPageRequest{
+		PageID: "page-1",
+	}, 1, "")
+	req.AddCookie(&http.Cookie{Name: facebookPendingCookieName, Value: flowID})
+	w := runWithAuth(h.SelectFacebookPage, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	var account model.SocialAccount
+	if err := h.db.Where("user_id = ? AND platform = ?", 1, "facebook").First(&account).Error; err != nil {
+		t.Fatalf("expected facebook social account row, got error: %v", err)
+	}
+	if account.PlatformUserID != "fb-user-123" {
+		t.Errorf("expected platform user id fb-user-123, got %q", account.PlatformUserID)
+	}
+	if account.PlatformAccountID != "page-1" {
+		t.Errorf("expected page id page-1, got %q", account.PlatformAccountID)
+	}
+	if account.DisplayName != "CrossPost Bakery" {
+		t.Errorf("expected page display name CrossPost Bakery, got %q", account.DisplayName)
+	}
+	if account.AccessToken != "page-token-1" {
+		t.Errorf("expected page access token page-token-1, got %q", account.AccessToken)
+	}
+
+	var pendingCount int64
+	h.db.Model(&model.PendingFacebookPageLink{}).Where("flow_id = ?", flowID).Count(&pendingCount)
+	if pendingCount != 0 {
+		t.Fatalf("expected pending page rows to be cleared, got %d", pendingCount)
+	}
+}
+
+func TestSelectFacebookPage_RelinkUpdatesExistingRow(t *testing.T) {
+	h := setupFacebookHandler(t)
+	flowID := "pending-flow"
 
 	if err := h.db.Create(&model.SocialAccount{
-		UserID:         1,
-		Platform:       "facebook",
-		PlatformUserID: "fb-old",
-		DisplayName:    "Old Name",
-		AccessToken:    "old-token",
+		UserID:            1,
+		Platform:          "facebook",
+		PlatformUserID:    "fb-old-user",
+		PlatformAccountID: "old-page",
+		DisplayName:       "Old Name",
+		AccessToken:       "old-token",
 	}).Error; err != nil {
 		t.Fatalf("seed existing facebook account: %v", err)
 	}
+	if err := h.db.Create(&model.PendingFacebookPageLink{
+		FlowID:           flowID,
+		UserID:           1,
+		FacebookUserID:   "fb-user-123",
+		FacebookUserName: "Ada Lovelace",
+		PageID:           "page-2",
+		PageName:         "CrossPost Cafe",
+		PageAccessToken:  "page-token-2",
+		ExpiresAt:        time.Now().Add(5 * time.Minute),
+	}).Error; err != nil {
+		t.Fatalf("seed pending page: %v", err)
+	}
 
-	state := "facebook-state"
-	req := httptest.NewRequest(http.MethodGet,
-		"/api/auth/facebook/callback?code=fake-code&state="+state, nil)
-	req.AddCookie(&http.Cookie{Name: "facebook_state", Value: state})
-	req.AddCookie(&http.Cookie{Name: "facebook_linking_user_id", Value: "1"})
+	req := newPostRequest(t, http.MethodPost, "/api/auth/facebook/select-page", SelectFacebookPageRequest{
+		PageID: "page-2",
+	}, 1, "")
+	req.AddCookie(&http.Cookie{Name: facebookPendingCookieName, Value: flowID})
+	w := runWithAuth(h.SelectFacebookPage, req)
 
-	w := httptest.NewRecorder()
-	h.FacebookCallback(w, req)
-
-	if w.Code != http.StatusFound {
-		t.Fatalf("expected 302 redirect, got %d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
 	}
 
 	var accounts []model.SocialAccount
@@ -187,10 +316,13 @@ func TestFacebookCallback_RelinkUpdatesExistingRow(t *testing.T) {
 	if len(accounts) != 1 {
 		t.Fatalf("expected exactly one facebook row, got %d", len(accounts))
 	}
-	if accounts[0].DisplayName != "Updated Name" {
+	if accounts[0].PlatformAccountID != "page-2" {
+		t.Errorf("expected updated page id page-2, got %q", accounts[0].PlatformAccountID)
+	}
+	if accounts[0].DisplayName != "CrossPost Cafe" {
 		t.Errorf("expected updated display name, got %q", accounts[0].DisplayName)
 	}
-	if accounts[0].AccessToken != "fake-facebook-token" {
+	if accounts[0].AccessToken != "page-token-2" {
 		t.Errorf("expected updated access token, got %q", accounts[0].AccessToken)
 	}
 }

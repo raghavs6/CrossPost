@@ -66,3 +66,15 @@ configure these values in the repo-level `.env`:
 This flow currently supports **Instagram professional accounts only**
 (Business/Creator) and stores the linked account for display in the dashboard.
 Posting to Instagram is not implemented yet.
+
+Facebook account linking also uses backend OAuth routes. For local development,
+configure these values in the repo-level `.env`:
+
+- `FACEBOOK_APP_ID`
+- `FACEBOOK_APP_SECRET`
+- `FACEBOOK_REDIRECT_URL=http://127.0.0.1:8080/api/auth/facebook/callback`
+
+This flow supports **Facebook Pages**, not personal profile publishing. After
+the Meta OAuth callback succeeds, the dashboard prompts the user to choose one
+manageable Page. CrossPost stores that Page's access token and uses it for
+text post publishing through the Pages API.

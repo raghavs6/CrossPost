@@ -34,6 +34,23 @@ func seedTwitterAccount(t *testing.T, db *gorm.DB, userID uint, accessToken stri
 	return account
 }
 
+func seedFacebookAccount(t *testing.T, db *gorm.DB, userID uint, pageID string, accessToken string, expiry time.Time) model.SocialAccount {
+	t.Helper()
+	account := model.SocialAccount{
+		UserID:            userID,
+		Platform:          "facebook",
+		PlatformUserID:    "fb-user-123",
+		PlatformAccountID: pageID,
+		DisplayName:       "CrossPost Bakery",
+		AccessToken:       accessToken,
+		TokenExpiry:       expiry,
+	}
+	if err := db.Create(&account).Error; err != nil {
+		t.Fatalf("seedFacebookAccount: %v", err)
+	}
+	return account
+}
+
 // newPublishHandler builds a PublishHandler whose tweetURL points at ts so the
 // test can assert what the handler sent without hitting the real X API.
 func newPublishHandler(db *gorm.DB, ts *httptest.Server) *PublishHandler {
@@ -80,6 +97,58 @@ func TestPublishHappyPath(t *testing.T) {
 	}
 	if resp.Status != "published" {
 		t.Errorf("expected response status 'published', got %q", resp.Status)
+	}
+
+	var reloaded model.Post
+	if err := db.First(&reloaded, post.ID).Error; err != nil {
+		t.Fatalf("reload post: %v", err)
+	}
+	if reloaded.Status != "published" {
+		t.Errorf("expected DB status 'published', got %q", reloaded.Status)
+	}
+}
+
+func TestPublishFacebookHappyPath(t *testing.T) {
+	db := setupTestDB(t)
+	const userID uint = 1
+	post := seedPost(t, db, userID, "Hello Facebook from CrossPost!")
+	post.Platforms = "facebook"
+	if err := db.Save(&post).Error; err != nil {
+		t.Fatalf("update post platforms: %v", err)
+	}
+	seedFacebookAccount(t, db, userID, "page-1", "page-token", time.Time{})
+
+	var gotAuth, gotContentType, gotBody, gotPath string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		gotContentType = r.Header.Get("Content-Type")
+		gotPath = r.URL.Path
+		raw, _ := io.ReadAll(r.Body)
+		gotBody = string(raw)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"id":"fb-post-1"}`))
+	}))
+	defer ts.Close()
+
+	h := newPublishHandler(db, nil)
+	h.facebookFeedBaseURL = ts.URL
+	req := newPostRequest(t, http.MethodPost, "/api/posts/1/publish", nil, userID, "1")
+	w := runWithAuth(h.Publish, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (body: %s)", w.Code, w.Body.String())
+	}
+	if gotAuth != "Bearer page-token" {
+		t.Errorf("expected facebook bearer header, got %q", gotAuth)
+	}
+	if gotContentType != "application/x-www-form-urlencoded" {
+		t.Errorf("expected form content type, got %q", gotContentType)
+	}
+	if gotPath != "/page-1/feed" {
+		t.Errorf("expected facebook feed path /page-1/feed, got %q", gotPath)
+	}
+	if !strings.Contains(gotBody, "message=Hello+Facebook+from+CrossPost%21") {
+		t.Errorf("expected encoded message body, got %q", gotBody)
 	}
 
 	var reloaded model.Post
@@ -192,6 +261,33 @@ func TestPublishExpiredToken(t *testing.T) {
 	}
 	if reloaded.Status != "draft" {
 		t.Errorf("expected status to remain draft, got %q", reloaded.Status)
+	}
+}
+
+func TestPublishFacebookMissingPageID(t *testing.T) {
+	db := setupTestDB(t)
+	const userID uint = 1
+	post := seedPost(t, db, userID, "facebook page missing")
+	post.Platforms = "facebook"
+	if err := db.Save(&post).Error; err != nil {
+		t.Fatalf("update post platforms: %v", err)
+	}
+	if err := db.Create(&model.SocialAccount{
+		UserID:         userID,
+		Platform:       "facebook",
+		PlatformUserID: "fb-user-123",
+		DisplayName:    "CrossPost Bakery",
+		AccessToken:    "page-token",
+	}).Error; err != nil {
+		t.Fatalf("seed facebook account without page id: %v", err)
+	}
+
+	h := newPublishHandler(db, nil)
+	req := newPostRequest(t, http.MethodPost, "/api/posts/1/publish", nil, userID, "1")
+	w := runWithAuth(h.Publish, req)
+
+	if w.Code != http.StatusPreconditionFailed {
+		t.Fatalf("expected 412, got %d", w.Code)
 	}
 }
 

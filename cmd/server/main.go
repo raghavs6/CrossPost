@@ -90,6 +90,8 @@ func main() {
 		}
 		if cfg.FacebookEnabled() {
 			r.Get("/api/auth/facebook", facebookAuthHandler.FacebookLogin)
+			r.Get("/api/auth/facebook/pages", facebookAuthHandler.ListPendingFacebookPages)
+			r.Post("/api/auth/facebook/select-page", facebookAuthHandler.SelectFacebookPage)
 		}
 		if cfg.InstagramEnabled() {
 			r.Get("/api/auth/instagram", instagramAuthHandler.InstagramLogin)

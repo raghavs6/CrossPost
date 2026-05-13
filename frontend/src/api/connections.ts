@@ -1,5 +1,5 @@
 import apiClient from './client'
-import type { SocialConnection } from '../types'
+import type { FacebookPageOption, SocialConnection } from '../types'
 
 export interface TwitterAuthorizationResponse {
   authorization_url: string
@@ -38,4 +38,16 @@ export async function beginInstagramConnection(): Promise<string> {
 // API call has returned the X consent URL.
 export function redirectToExternalURL(url: string): void {
   window.location.assign(url)
+}
+
+export async function listPendingFacebookPages(): Promise<FacebookPageOption[]> {
+  const res = await apiClient.get<FacebookPageOption[]>('/api/auth/facebook/pages')
+  return res.data
+}
+
+export async function selectFacebookPage(pageID: string): Promise<SocialConnection> {
+  const res = await apiClient.post<SocialConnection>('/api/auth/facebook/select-page', {
+    page_id: pageID,
+  })
+  return res.data
 }

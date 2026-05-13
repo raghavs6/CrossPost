@@ -24,6 +24,11 @@ export interface SocialConnection {
   connected_at: string
 }
 
+export interface FacebookPageOption {
+  id: string
+  name: string
+}
+
 export interface ApiResponse<T> {
   data?: T
   message?: string

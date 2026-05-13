@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -17,7 +18,10 @@ import (
 )
 
 // twitterDefaultTweetURL is the X API v2 endpoint that creates a new tweet.
-const twitterDefaultTweetURL = "https://api.twitter.com/2/tweets"
+const (
+	twitterDefaultTweetURL     = "https://api.twitter.com/2/tweets"
+	facebookDefaultFeedBaseURL = "https://graph.facebook.com/" + facebookGraphVersion
+)
 
 // PublishHandler turns a stored draft Post into a real tweet on the X API.
 //
@@ -25,17 +29,19 @@ const twitterDefaultTweetURL = "https://api.twitter.com/2/tweets"
 // httptest.NewServer instead of the real Twitter API — same pattern as
 // TwitterAuthHandler.
 type PublishHandler struct {
-	db         *gorm.DB
-	httpClient *http.Client
-	tweetURL   string
+	db                  *gorm.DB
+	httpClient          *http.Client
+	tweetURL            string
+	facebookFeedBaseURL string
 }
 
 // NewPublishHandler constructs a PublishHandler with sensible defaults.
 func NewPublishHandler(db *gorm.DB) *PublishHandler {
 	return &PublishHandler{
-		db:         db,
-		httpClient: &http.Client{Timeout: 10 * time.Second},
-		tweetURL:   twitterDefaultTweetURL,
+		db:                  db,
+		httpClient:          &http.Client{Timeout: 10 * time.Second},
+		tweetURL:            twitterDefaultTweetURL,
+		facebookFeedBaseURL: facebookDefaultFeedBaseURL,
 	}
 }
 
@@ -74,56 +80,21 @@ func (h *PublishHandler) Publish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !containsPlatform(post.Platforms, "twitter") {
-		http.Error(w, "post does not target twitter", http.StatusBadRequest)
+	targets := parsePlatforms(post.Platforms)
+	if len(targets) == 0 {
+		http.Error(w, "post does not target a supported platform", http.StatusBadRequest)
 		return
 	}
 
-	var account model.SocialAccount
-	acctResult := h.db.Where("user_id = ? AND platform = ?", userID, "twitter").First(&account)
-	if errors.Is(acctResult.Error, gorm.ErrRecordNotFound) {
-		http.Error(w, "no linked X account", http.StatusPreconditionFailed)
-		return
-	}
-	if acctResult.Error != nil {
-		http.Error(w, "database error", http.StatusInternalServerError)
-		return
-	}
-
-	// Treat zero TokenExpiry as "no expiry recorded" and let the request through;
-	// the X API will reject it if invalid. Otherwise refuse pre-emptively.
-	if !account.TokenExpiry.IsZero() && !account.TokenExpiry.After(time.Now()) {
-		http.Error(w, "X token expired, please reconnect", http.StatusUnauthorized)
-		return
-	}
-
-	body, err := json.Marshal(tweetCreateRequest{Text: post.Content})
-	if err != nil {
-		http.Error(w, "failed to encode tweet body", http.StatusInternalServerError)
-		return
-	}
-
-	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, h.tweetURL, bytes.NewReader(body))
-	if err != nil {
-		http.Error(w, "failed to build tweet request", http.StatusInternalServerError)
-		return
-	}
-	req.Header.Set("Authorization", "Bearer "+account.AccessToken)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := h.httpClient.Do(req)
-	if err != nil {
-		h.markFailed(&post)
-		http.Error(w, "twitter request failed", http.StatusBadGateway)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		h.markFailed(&post)
-		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		http.Error(w, fmt.Sprintf("twitter returned %d: %s", resp.StatusCode, strings.TrimSpace(string(errBody))), http.StatusBadGateway)
-		return
+	for _, target := range targets {
+		status, msg, shouldMarkFailed := h.publishToPlatform(r, userID, target, post.Content)
+		if status != http.StatusOK {
+			if shouldMarkFailed {
+				h.markFailed(&post)
+			}
+			http.Error(w, msg, status)
+			return
+		}
 	}
 
 	post.Status = "published"
@@ -136,6 +107,100 @@ func (h *PublishHandler) Publish(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(toResponse(post))
 }
 
+func (h *PublishHandler) publishToPlatform(r *http.Request, userID uint, platform string, content string) (int, string, bool) {
+	switch platform {
+	case "twitter":
+		return h.publishTwitter(r, userID, content)
+	case "facebook":
+		return h.publishFacebook(r, userID, content)
+	default:
+		return http.StatusBadRequest, "post targets an unsupported platform: " + platform, false
+	}
+}
+
+func (h *PublishHandler) publishTwitter(r *http.Request, userID uint, content string) (int, string, bool) {
+	account, status, msg := h.loadSocialAccount(userID, "twitter", "X")
+	if status != http.StatusOK {
+		return status, msg, false
+	}
+
+	body, err := json.Marshal(tweetCreateRequest{Text: content})
+	if err != nil {
+		return http.StatusInternalServerError, "failed to encode tweet body", false
+	}
+
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, h.tweetURL, bytes.NewReader(body))
+	if err != nil {
+		return http.StatusInternalServerError, "failed to build tweet request", false
+	}
+	req.Header.Set("Authorization", "Bearer "+account.AccessToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := h.httpClient.Do(req)
+	if err != nil {
+		return http.StatusBadGateway, "twitter request failed", true
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return http.StatusBadGateway, fmt.Sprintf("twitter returned %d: %s", resp.StatusCode, strings.TrimSpace(string(errBody))), true
+	}
+
+	return http.StatusOK, "", false
+}
+
+func (h *PublishHandler) publishFacebook(r *http.Request, userID uint, content string) (int, string, bool) {
+	account, status, msg := h.loadSocialAccount(userID, "facebook", "Facebook")
+	if status != http.StatusOK {
+		return status, msg, false
+	}
+	if account.PlatformAccountID == "" {
+		return http.StatusPreconditionFailed, "facebook page is missing, please reconnect", false
+	}
+
+	form := url.Values{}
+	form.Set("message", content)
+
+	feedURL := strings.TrimRight(h.facebookFeedBaseURL, "/") + "/" + account.PlatformAccountID + "/feed"
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, feedURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		return http.StatusInternalServerError, "failed to build facebook post request", false
+	}
+	req.Header.Set("Authorization", "Bearer "+account.AccessToken)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := h.httpClient.Do(req)
+	if err != nil {
+		return http.StatusBadGateway, "facebook request failed", true
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return http.StatusBadGateway, fmt.Sprintf("facebook returned %d: %s", resp.StatusCode, strings.TrimSpace(string(errBody))), true
+	}
+
+	return http.StatusOK, "", false
+}
+
+func (h *PublishHandler) loadSocialAccount(userID uint, platform string, label string) (model.SocialAccount, int, string) {
+	var account model.SocialAccount
+	acctResult := h.db.Where("user_id = ? AND platform = ?", userID, platform).First(&account)
+	if errors.Is(acctResult.Error, gorm.ErrRecordNotFound) {
+		return model.SocialAccount{}, http.StatusPreconditionFailed, "no linked " + label + " account"
+	}
+	if acctResult.Error != nil {
+		return model.SocialAccount{}, http.StatusInternalServerError, "database error"
+	}
+
+	if !account.TokenExpiry.IsZero() && !account.TokenExpiry.After(time.Now()) {
+		return model.SocialAccount{}, http.StatusUnauthorized, label + " token expired, please reconnect"
+	}
+
+	return account, http.StatusOK, ""
+}
+
 // markFailed flips a post's status to "failed" and persists the change.
 // Errors are intentionally swallowed — the caller is already returning an
 // error response and a logging failure here would obscure the real cause.
@@ -144,14 +209,14 @@ func (h *PublishHandler) markFailed(post *model.Post) {
 	h.db.Save(post)
 }
 
-// containsPlatform returns true when name appears in the post's
-// comma-separated Platforms column. Whitespace around entries is tolerated
-// so "twitter, linkedin" still matches "twitter".
-func containsPlatform(csv, name string) bool {
+func parsePlatforms(csv string) []string {
+	platforms := []string{}
 	for _, p := range strings.Split(csv, ",") {
-		if strings.TrimSpace(p) == name {
-			return true
+		trimmed := strings.TrimSpace(p)
+		if trimmed == "" {
+			continue
 		}
+		platforms = append(platforms, trimmed)
 	}
-	return false
+	return platforms
 }

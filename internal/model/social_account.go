@@ -18,16 +18,22 @@ import (
 // Twitter also exposes a username/handle, but providers like Facebook are
 // better represented by a display name only.
 //
+// PlatformAccountID stores the provider object we actually act on. For X and
+// Instagram it matches the linked account/user ID. For Facebook it stores the
+// selected Page ID because publishing happens at the Page level, not the
+// person level.
+//
 // AccessToken and RefreshToken are stored as TEXT (not VARCHAR) because OAuth
 // tokens can be long strings and we never need to index them.
 type SocialAccount struct {
 	gorm.Model
-	UserID         uint   `gorm:"not null;index;uniqueIndex:idx_user_platform"`
-	Platform       string `gorm:"not null;uniqueIndex:idx_user_platform"` // e.g. "twitter"
-	PlatformUserID string `gorm:"not null"`                               // platform's own user ID
-	DisplayName    string `gorm:"not null"`
-	Username       string
-	AccessToken    string `gorm:"not null;type:text"`
-	RefreshToken   string `gorm:"type:text"`
-	TokenExpiry    time.Time
+	UserID            uint   `gorm:"not null;index;uniqueIndex:idx_user_platform"`
+	Platform          string `gorm:"not null;uniqueIndex:idx_user_platform"` // e.g. "twitter"
+	PlatformUserID    string `gorm:"not null"`                               // platform's own user ID
+	PlatformAccountID string
+	DisplayName       string `gorm:"not null"`
+	Username          string
+	AccessToken       string `gorm:"not null;type:text"`
+	RefreshToken      string `gorm:"type:text"`
+	TokenExpiry       time.Time
 }

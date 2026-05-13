@@ -177,12 +177,13 @@ func (h *TwitterAuthHandler) TwitterCallback(w http.ResponseWriter, r *http.Requ
 	var account model.SocialAccount
 	result := h.db.Where(model.SocialAccount{UserID: userID, Platform: "twitter"}).
 		Assign(model.SocialAccount{
-			PlatformUserID: twitterUser.ID,
-			DisplayName:    twitterUser.Name,
-			Username:       twitterUser.Username,
-			AccessToken:    token.AccessToken,
-			RefreshToken:   refreshToken,
-			TokenExpiry:    token.Expiry,
+			PlatformUserID:    twitterUser.ID,
+			PlatformAccountID: twitterUser.ID,
+			DisplayName:       twitterUser.Name,
+			Username:          twitterUser.Username,
+			AccessToken:       token.AccessToken,
+			RefreshToken:      refreshToken,
+			TokenExpiry:       token.Expiry,
 		}).
 		FirstOrCreate(&account)
 	if result.Error != nil {
