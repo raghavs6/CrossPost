@@ -13,19 +13,26 @@ import (
 
 	"github.com/raghavs6/CrossPost/internal/middleware"
 	"github.com/raghavs6/CrossPost/internal/model"
+	"github.com/raghavs6/CrossPost/internal/publisher"
+	"github.com/raghavs6/CrossPost/internal/queue"
 )
 
 // PostHandler holds the database connection used by all post routes.
 // This mirrors the AuthHandler pattern: one struct, one constructor, methods
 // registered individually as chi route handlers.
 type PostHandler struct {
-	db *gorm.DB
+	db        *gorm.DB
+	scheduler queue.Scheduler
 }
 
 // NewPostHandler constructs a PostHandler.  Call once in main.go and pass the
 // returned value's methods to chi route registration.
-func NewPostHandler(db *gorm.DB) *PostHandler {
-	return &PostHandler{db: db}
+func NewPostHandler(db *gorm.DB, schedulers ...queue.Scheduler) *PostHandler {
+	var scheduler queue.Scheduler
+	if len(schedulers) > 0 {
+		scheduler = schedulers[0]
+	}
+	return &PostHandler{db: db, scheduler: scheduler}
 }
 
 // CreatePostRequest is the typed struct we decode the request body into.
@@ -78,7 +85,8 @@ func toResponse(p model.Post) PostResponse {
 
 // Create handles POST /api/posts.
 // Decodes the request body, validates required fields, inserts a new post with
-// Status="draft", and returns 201 Created with the created post.
+// Status="queued", enqueues the publish job, and returns 201 Created with the
+// created post.
 func (h *PostHandler) Create(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
 
@@ -96,17 +104,41 @@ func (h *PostHandler) Create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "at least one platform is required", http.StatusBadRequest)
 		return
 	}
+	if req.ScheduledAt.IsZero() {
+		http.Error(w, "scheduled_at is required", http.StatusBadRequest)
+		return
+	}
+	if !req.ScheduledAt.After(time.Now()) {
+		http.Error(w, "scheduled_at must be in the future", http.StatusBadRequest)
+		return
+	}
+	for _, platform := range req.Platforms {
+		if !publisher.SupportedPlatform(platform) {
+			http.Error(w, "unsupported platform: "+platform, http.StatusBadRequest)
+			return
+		}
+	}
+	if h.scheduler == nil {
+		http.Error(w, "post scheduler is not configured", http.StatusInternalServerError)
+		return
+	}
 
 	post := model.Post{
 		UserID:      userID,
 		Content:     req.Content,
 		Platforms:   strings.Join(req.Platforms, ","),
 		ScheduledAt: req.ScheduledAt,
-		Status:      "draft",
+		Status:      "queued",
 	}
 
 	if err := h.db.Create(&post).Error; err != nil {
 		http.Error(w, "failed to create post", http.StatusInternalServerError)
+		return
+	}
+	if err := h.scheduler.SchedulePublish(r.Context(), post); err != nil {
+		post.Status = "failed"
+		h.db.Save(&post)
+		http.Error(w, "failed to schedule post", http.StatusInternalServerError)
 		return
 	}
 

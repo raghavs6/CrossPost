@@ -81,6 +81,25 @@ describe('DashboardPage', () => {
     expect(screen.getByText('linkedin')).toBeInTheDocument()
   })
 
+  it('polls posts so scheduled statuses can refresh', async () => {
+    vi.mocked(postsApi.listPosts)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ ...mockPost, status: 'published' }])
+    const setIntervalSpy = vi.spyOn(window, 'setInterval').mockImplementation((handler: TimerHandler) => {
+      if (typeof handler === 'function') {
+        handler()
+      }
+      return 1
+    })
+
+    renderDashboard()
+
+    expect(await screen.findByText('Hello world from the test')).toBeInTheDocument()
+    expect(screen.getByText('published')).toBeInTheDocument()
+    expect(postsApi.listPosts).toHaveBeenCalledTimes(2)
+    setIntervalSpy.mockRestore()
+  })
+
   it('shows empty state when no posts exist', async () => {
     vi.mocked(postsApi.listPosts).mockResolvedValue([])
     renderDashboard()
@@ -93,6 +112,14 @@ describe('DashboardPage', () => {
     vi.mocked(postsApi.listPosts).mockResolvedValue([])
     const newPost: Post = { ...mockPost, id: 2, content: 'My new post' }
     vi.mocked(postsApi.createPost).mockResolvedValue(newPost)
+    vi.mocked(connectionsApi.listConnections).mockResolvedValue([
+      {
+        platform: 'twitter',
+        display_name: 'My Twitter',
+        username: 'mytwitterhandle',
+        connected_at: '2025-01-01T00:00:00.000Z',
+      },
+    ])
 
     const { container } = renderDashboard()
     // Wait for the initial load to finish before interacting with the form.
@@ -103,22 +130,22 @@ describe('DashboardPage', () => {
       target: { value: 'My new post' },
     })
 
-    // Select the LinkedIn platform toggle.
-    fireEvent.click(screen.getByText('LinkedIn'))
+    // Select the X platform toggle.
+    fireEvent.click(screen.getByText('X'))
 
     // Set the scheduled datetime.  datetime-local inputs have no ARIA label in
     // this component, so we target by input type via container.querySelector.
     const datetimeInput = container.querySelector('input[type="datetime-local"]')!
-    fireEvent.change(datetimeInput, { target: { value: '2025-01-15T14:30' } })
+    fireEvent.change(datetimeInput, { target: { value: '2030-01-15T14:30' } })
 
     fireEvent.click(screen.getByText('Schedule Post'))
 
     await waitFor(() => {
       expect(postsApi.createPost).toHaveBeenCalledWith({
         content: 'My new post',
-        platforms: ['linkedin'],
+        platforms: ['twitter'],
         // The component converts the datetime-local string to a full ISO string.
-        scheduled_at: new Date('2025-01-15T14:30').toISOString(),
+        scheduled_at: new Date('2030-01-15T14:30').toISOString(),
       })
     })
 
@@ -148,6 +175,14 @@ describe('DashboardPage', () => {
   it('shows error message when createPost fails', async () => {
     vi.mocked(postsApi.listPosts).mockResolvedValue([])
     vi.mocked(postsApi.createPost).mockRejectedValue(new Error('Network error'))
+    vi.mocked(connectionsApi.listConnections).mockResolvedValue([
+      {
+        platform: 'twitter',
+        display_name: 'My Twitter',
+        username: 'mytwitterhandle',
+        connected_at: '2025-01-01T00:00:00.000Z',
+      },
+    ])
 
     const { container } = renderDashboard()
     await screen.findByText('No posts yet. Create one above.')
@@ -157,7 +192,7 @@ describe('DashboardPage', () => {
     })
     fireEvent.click(screen.getByText('X'))
     const datetimeInput = container.querySelector('input[type="datetime-local"]')!
-    fireEvent.change(datetimeInput, { target: { value: '2025-01-15T14:30' } })
+    fireEvent.change(datetimeInput, { target: { value: '2030-01-15T14:30' } })
 
     fireEvent.click(screen.getByText('Schedule Post'))
 
@@ -177,6 +212,34 @@ describe('DashboardPage', () => {
     renderDashboard()
 
     expect(await screen.findByText('Connect X')).toBeInTheDocument()
+  })
+
+  it('does not offer LinkedIn as a scheduling target yet', async () => {
+    vi.mocked(postsApi.listPosts).mockResolvedValue([])
+
+    renderDashboard()
+
+    await screen.findByText('Connect X')
+    expect(screen.queryByText('LinkedIn')).not.toBeInTheDocument()
+  })
+
+  it('requires selected accounts to be connected before scheduling', async () => {
+    vi.mocked(postsApi.listPosts).mockResolvedValue([])
+
+    const { container } = renderDashboard()
+    await screen.findByText('No posts yet. Create one above.')
+
+    fireEvent.change(screen.getByPlaceholderText('Write your post here…'), {
+      target: { value: 'Needs a linked account' },
+    })
+    fireEvent.click(screen.getByText('X'))
+    const datetimeInput = container.querySelector('input[type="datetime-local"]')!
+    fireEvent.change(datetimeInput, { target: { value: '2030-01-15T14:30' } })
+
+    fireEvent.click(screen.getByText('Schedule Post'))
+
+    expect(await screen.findByText('Connect selected accounts before scheduling.')).toBeInTheDocument()
+    expect(postsApi.createPost).not.toHaveBeenCalled()
   })
 
   it('shows a helpful OAuth error message from callback redirects', async () => {

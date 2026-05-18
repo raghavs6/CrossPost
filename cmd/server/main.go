@@ -11,6 +11,7 @@ import (
 	"github.com/raghavs6/CrossPost/internal/db"
 	"github.com/raghavs6/CrossPost/internal/handler"
 	"github.com/raghavs6/CrossPost/internal/middleware"
+	"github.com/raghavs6/CrossPost/internal/queue"
 )
 
 func main() {
@@ -48,7 +49,10 @@ func main() {
 	r.Get("/api/auth/google", authHandler.GoogleLogin)
 	r.Get("/api/auth/google/callback", authHandler.GoogleCallback)
 
-	postHandler := handler.NewPostHandler(database)
+	postScheduler := queue.NewScheduler(cfg.RedisAddr())
+	defer postScheduler.Close()
+
+	postHandler := handler.NewPostHandler(database, postScheduler)
 	publishHandler := handler.NewPublishHandler(database)
 
 	// Twitter auth handler is always constructed (ListConnections works without

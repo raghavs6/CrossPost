@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -39,6 +40,31 @@ func signToken(t *testing.T, userID uint) string {
 		t.Fatalf("signToken: failed to sign: %v", err)
 	}
 	return str
+}
+
+func TestPostCreate_EnqueueFailureMarksPostFailed(t *testing.T) {
+	db := setupTestDB(t)
+	scheduler := &fakePostScheduler{err: errors.New("redis unavailable")}
+	h := NewPostHandler(db, scheduler)
+
+	req := newPostRequest(t, http.MethodPost, "/api/posts", CreatePostRequest{
+		Content:     "Will not enqueue",
+		Platforms:   []string{"twitter"},
+		ScheduledAt: time.Now().Add(1 * time.Hour),
+	}, 1, "")
+	w := runWithAuth(h.Create, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d (body: %s)", w.Code, w.Body.String())
+	}
+
+	var post model.Post
+	if err := db.Where("user_id = ? AND content = ?", 1, "Will not enqueue").First(&post).Error; err != nil {
+		t.Fatalf("expected failed post row to exist: %v", err)
+	}
+	if post.Status != "failed" {
+		t.Fatalf("expected post status failed after enqueue error, got %q", post.Status)
+	}
 }
 
 // newPostRequest builds an HTTP request with:
@@ -101,6 +127,16 @@ func seedPost(t *testing.T, db *gorm.DB, userID uint, content string) model.Post
 	return post
 }
 
+type fakePostScheduler struct {
+	posts []model.Post
+	err   error
+}
+
+func (f *fakePostScheduler) SchedulePublish(_ context.Context, post model.Post) error {
+	f.posts = append(f.posts, post)
+	return f.err
+}
+
 // ---------------------------------------------------------------------------
 // Create
 // ---------------------------------------------------------------------------
@@ -115,7 +151,7 @@ func TestPostCreate(t *testing.T) {
 			name: "success",
 			body: CreatePostRequest{
 				Content:     "Hello world!",
-				Platforms:   []string{"twitter", "linkedin"},
+				Platforms:   []string{"twitter", "facebook"},
 				ScheduledAt: time.Now().Add(1 * time.Hour),
 			},
 			expectedStatus: http.StatusCreated,
@@ -148,6 +184,24 @@ func TestPostCreate(t *testing.T) {
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
+			name: "unsupported platform",
+			body: CreatePostRequest{
+				Content:     "Instagram is not publishable yet",
+				Platforms:   []string{"instagram"},
+				ScheduledAt: time.Now().Add(1 * time.Hour),
+			},
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name: "scheduled_at must be future",
+			body: CreatePostRequest{
+				Content:     "Too late",
+				Platforms:   []string{"twitter"},
+				ScheduledAt: time.Now().Add(-1 * time.Hour),
+			},
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
 			name:           "invalid json body",
 			body:           nil, // we'll send a raw invalid string below
 			expectedStatus: http.StatusBadRequest,
@@ -157,7 +211,8 @@ func TestPostCreate(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			db := setupTestDB(t)
-			h := NewPostHandler(db)
+			scheduler := &fakePostScheduler{}
+			h := NewPostHandler(db, scheduler)
 
 			var req *http.Request
 			if tc.name == "invalid json body" {
@@ -184,11 +239,17 @@ func TestPostCreate(t *testing.T) {
 				if resp.ID == 0 {
 					t.Error("expected non-zero ID in created post response")
 				}
-				if resp.Status != "draft" {
-					t.Errorf("expected status=draft, got %q", resp.Status)
+				if resp.Status != "queued" {
+					t.Errorf("expected status=queued, got %q", resp.Status)
 				}
 				if len(resp.Platforms) != 2 {
 					t.Errorf("expected 2 platforms, got %d", len(resp.Platforms))
+				}
+				if len(scheduler.posts) != 1 {
+					t.Fatalf("expected one scheduled publish job, got %d", len(scheduler.posts))
+				}
+				if scheduler.posts[0].ID != resp.ID {
+					t.Errorf("expected scheduled post ID %d, got %d", resp.ID, scheduler.posts[0].ID)
 				}
 			}
 		})

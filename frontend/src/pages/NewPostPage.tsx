@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import client from '../api/client'
+import { createPost } from '../api/posts'
 import type { Platform } from '../types'
 
-const PLATFORMS: Platform[] = ['twitter', 'linkedin', 'facebook']
+const PLATFORMS: Platform[] = ['twitter', 'facebook']
 
 export default function NewPostPage() {
   const navigate = useNavigate()
@@ -26,13 +26,17 @@ export default function NewPostPage() {
       setError('Select at least one platform.')
       return
     }
+    if (!scheduledAt || new Date(scheduledAt) <= new Date()) {
+      setError('Schedule time must be in the future.')
+      return
+    }
     setError('')
     setLoading(true)
     try {
-      await client.post('/api/posts', {
+      await createPost({
         content,
         platforms: selectedPlatforms,
-        scheduledAt,
+        scheduled_at: new Date(scheduledAt).toISOString(),
       })
       navigate('/dashboard')
     } catch {

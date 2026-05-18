@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/raghavs6/CrossPost/internal/model"
+	"github.com/raghavs6/CrossPost/internal/publisher"
 )
 
 // seedTwitterAccount inserts a SocialAccount row so the publish handler can
@@ -54,11 +55,11 @@ func seedFacebookAccount(t *testing.T, db *gorm.DB, userID uint, pageID string, 
 // newPublishHandler builds a PublishHandler whose tweetURL points at ts so the
 // test can assert what the handler sent without hitting the real X API.
 func newPublishHandler(db *gorm.DB, ts *httptest.Server) *PublishHandler {
-	h := NewPublishHandler(db)
+	tweetURL := ""
 	if ts != nil {
-		h.tweetURL = ts.URL
+		tweetURL = ts.URL
 	}
-	return h
+	return NewPublishHandlerWithPublisher(db, publisher.NewForTest(db, nil, tweetURL, ""))
 }
 
 func TestPublishHappyPath(t *testing.T) {
@@ -130,8 +131,7 @@ func TestPublishFacebookHappyPath(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	h := newPublishHandler(db, nil)
-	h.facebookFeedBaseURL = ts.URL
+	h := NewPublishHandlerWithPublisher(db, publisher.NewForTest(db, nil, "", ts.URL))
 	req := newPostRequest(t, http.MethodPost, "/api/posts/1/publish", nil, userID, "1")
 	w := runWithAuth(h.Publish, req)
 
