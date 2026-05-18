@@ -83,13 +83,13 @@ func (h *InstagramAuthHandler) InstagramLogin(w http.ResponseWriter, r *http.Req
 func (h *InstagramAuthHandler) InstagramCallback(w http.ResponseWriter, r *http.Request) {
 	stateCookie, err := r.Cookie("instagram_state")
 	if err != nil || r.URL.Query().Get("state") != stateCookie.Value {
-		http.Error(w, "state mismatch", http.StatusBadRequest)
+		redirectOAuthCallbackError(w, r, h.frontendURL, "instagram", "state_mismatch")
 		return
 	}
 
 	userIDCookie, err := r.Cookie("instagram_linking_user_id")
 	if err != nil {
-		http.Error(w, "missing user id cookie", http.StatusBadRequest)
+		redirectOAuthCallbackError(w, r, h.frontendURL, "instagram", "missing_user_cookie")
 		return
 	}
 
@@ -99,26 +99,26 @@ func (h *InstagramAuthHandler) InstagramCallback(w http.ResponseWriter, r *http.
 
 	rawUID, err := strconv.ParseUint(userIDCookie.Value, 10, 64)
 	if err != nil {
-		http.Error(w, "invalid user id cookie", http.StatusBadRequest)
+		redirectOAuthCallbackError(w, r, h.frontendURL, "instagram", "invalid_user_cookie")
 		return
 	}
 	userID := uint(rawUID)
 
 	code := r.URL.Query().Get("code")
 	if code == "" {
-		http.Error(w, "missing code", http.StatusBadRequest)
+		redirectOAuthCallbackError(w, r, h.frontendURL, "instagram", "missing_code")
 		return
 	}
 
 	token, expiresAt, err := h.exchangeCode(code)
 	if err != nil {
-		http.Error(w, "failed to exchange token", http.StatusInternalServerError)
+		redirectOAuthCallbackError(w, r, h.frontendURL, "instagram", "token_exchange_failed")
 		return
 	}
 
 	profile, err := h.fetchInstagramProfile(token)
 	if err != nil {
-		http.Error(w, "failed to fetch instagram user info", http.StatusInternalServerError)
+		redirectOAuthCallbackError(w, r, h.frontendURL, "instagram", "profile_fetch_failed")
 		return
 	}
 
@@ -139,7 +139,7 @@ func (h *InstagramAuthHandler) InstagramCallback(w http.ResponseWriter, r *http.
 		}).
 		FirstOrCreate(&account)
 	if result.Error != nil {
-		http.Error(w, "database error", http.StatusInternalServerError)
+		redirectOAuthCallbackError(w, r, h.frontendURL, "instagram", "database_failed")
 		return
 	}
 

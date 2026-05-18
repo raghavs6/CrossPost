@@ -121,7 +121,7 @@ func TestInstagramCallback_StoresSocialAccount(t *testing.T) {
 	}
 }
 
-func TestInstagramCallback_StateMismatch_Returns400(t *testing.T) {
+func TestInstagramCallback_StateMismatch_RedirectsWithSafeError(t *testing.T) {
 	h := setupInstagramHandler(t, "ig-999", "mallory", "Mallory")
 
 	req := httptest.NewRequest(http.MethodGet,
@@ -132,12 +132,10 @@ func TestInstagramCallback_StateMismatch_Returns400(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.InstagramCallback(w, req)
 
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400 on state mismatch, got %d", w.Code)
-	}
+	assertOAuthErrorRedirect(t, w, "instagram_state_mismatch")
 }
 
-func TestInstagramCallback_MissingCode_Returns400(t *testing.T) {
+func TestInstagramCallback_MissingCode_RedirectsWithSafeError(t *testing.T) {
 	h := setupInstagramHandler(t, "ig-999", "mallory", "Mallory")
 
 	state := "instagram-state"
@@ -149,9 +147,7 @@ func TestInstagramCallback_MissingCode_Returns400(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.InstagramCallback(w, req)
 
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400 when code is missing, got %d", w.Code)
-	}
+	assertOAuthErrorRedirect(t, w, "instagram_missing_code")
 }
 
 func TestInstagramCallback_RelinkUpdatesExistingRow(t *testing.T) {

@@ -137,7 +137,7 @@ func TestFacebookCallback_StoresPendingPages(t *testing.T) {
 	}
 }
 
-func TestFacebookCallback_StateMismatch_Returns400(t *testing.T) {
+func TestFacebookCallback_StateMismatch_RedirectsWithSafeError(t *testing.T) {
 	h := setupFacebookHandler(t)
 
 	req := httptest.NewRequest(http.MethodGet,
@@ -148,12 +148,10 @@ func TestFacebookCallback_StateMismatch_Returns400(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.FacebookCallback(w, req)
 
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400 on state mismatch, got %d", w.Code)
-	}
+	assertOAuthErrorRedirect(t, w, "facebook_state_mismatch")
 }
 
-func TestFacebookCallback_MissingCode_Returns400(t *testing.T) {
+func TestFacebookCallback_MissingCode_RedirectsWithSafeError(t *testing.T) {
 	h := setupFacebookHandler(t)
 
 	state := "facebook-state"
@@ -165,9 +163,7 @@ func TestFacebookCallback_MissingCode_Returns400(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.FacebookCallback(w, req)
 
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400 when code is missing, got %d", w.Code)
-	}
+	assertOAuthErrorRedirect(t, w, "facebook_missing_code")
 }
 
 func TestListPendingFacebookPages_ReturnsPageChoices(t *testing.T) {

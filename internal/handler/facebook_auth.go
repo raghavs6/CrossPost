@@ -90,13 +90,13 @@ func (h *FacebookAuthHandler) FacebookLogin(w http.ResponseWriter, r *http.Reque
 func (h *FacebookAuthHandler) FacebookCallback(w http.ResponseWriter, r *http.Request) {
 	stateCookie, err := r.Cookie("facebook_state")
 	if err != nil || r.URL.Query().Get("state") != stateCookie.Value {
-		http.Error(w, "state mismatch", http.StatusBadRequest)
+		redirectOAuthCallbackError(w, r, h.frontendURL, "facebook", "state_mismatch")
 		return
 	}
 
 	userIDCookie, err := r.Cookie("facebook_linking_user_id")
 	if err != nil {
-		http.Error(w, "missing user id cookie", http.StatusBadRequest)
+		redirectOAuthCallbackError(w, r, h.frontendURL, "facebook", "missing_user_cookie")
 		return
 	}
 
@@ -106,49 +106,49 @@ func (h *FacebookAuthHandler) FacebookCallback(w http.ResponseWriter, r *http.Re
 
 	rawUID, err := strconv.ParseUint(userIDCookie.Value, 10, 64)
 	if err != nil {
-		http.Error(w, "invalid user id cookie", http.StatusBadRequest)
+		redirectOAuthCallbackError(w, r, h.frontendURL, "facebook", "invalid_user_cookie")
 		return
 	}
 	userID := uint(rawUID)
 
 	code := r.URL.Query().Get("code")
 	if code == "" {
-		http.Error(w, "missing code", http.StatusBadRequest)
+		redirectOAuthCallbackError(w, r, h.frontendURL, "facebook", "missing_code")
 		return
 	}
 
 	userToken, err := h.exchangeCode(code)
 	if err != nil {
-		http.Error(w, "failed to exchange token", http.StatusInternalServerError)
+		redirectOAuthCallbackError(w, r, h.frontendURL, "facebook", "token_exchange_failed")
 		return
 	}
 
 	profile, err := h.fetchFacebookProfile(userToken)
 	if err != nil {
-		http.Error(w, "failed to fetch facebook user info", http.StatusInternalServerError)
+		redirectOAuthCallbackError(w, r, h.frontendURL, "facebook", "profile_fetch_failed")
 		return
 	}
 
 	pages, err := h.fetchFacebookPages(userToken)
 	if err != nil {
-		http.Error(w, "failed to fetch facebook pages", http.StatusInternalServerError)
+		redirectOAuthCallbackError(w, r, h.frontendURL, "facebook", "pages_fetch_failed")
 		return
 	}
 	if len(pages) == 0 {
-		http.Error(w, "no manageable facebook pages found", http.StatusPreconditionFailed)
+		redirectOAuthCallbackError(w, r, h.frontendURL, "facebook", "no_pages_found")
 		return
 	}
 
 	flowID, err := generateState()
 	if err != nil {
-		http.Error(w, "failed to generate facebook page selection state", http.StatusInternalServerError)
+		redirectOAuthCallbackError(w, r, h.frontendURL, "facebook", "page_selection_state_failed")
 		return
 	}
 
 	expiresAt := time.Now().Add(facebookPendingLinkMaxAge)
 	h.cleanupExpiredPendingLinks()
 	if err := h.db.Where("user_id = ?", userID).Delete(&model.PendingFacebookPageLink{}).Error; err != nil {
-		http.Error(w, "failed to clear previous facebook page choices", http.StatusInternalServerError)
+		redirectOAuthCallbackError(w, r, h.frontendURL, "facebook", "pending_cleanup_failed")
 		return
 	}
 
@@ -166,7 +166,7 @@ func (h *FacebookAuthHandler) FacebookCallback(w http.ResponseWriter, r *http.Re
 		})
 	}
 	if err := h.db.Create(&pendingRows).Error; err != nil {
-		http.Error(w, "failed to store facebook page choices", http.StatusInternalServerError)
+		redirectOAuthCallbackError(w, r, h.frontendURL, "facebook", "pending_pages_store_failed")
 		return
 	}
 

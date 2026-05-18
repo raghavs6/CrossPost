@@ -179,6 +179,16 @@ describe('DashboardPage', () => {
     expect(await screen.findByText('Connect X')).toBeInTheDocument()
   })
 
+  it('shows a helpful OAuth error message from callback redirects', async () => {
+    vi.mocked(postsApi.listPosts).mockResolvedValue([])
+
+    renderDashboard('/dashboard?oauth_error=twitter_token_exchange_failed')
+
+    expect(
+      await screen.findByText('X connection failed during token exchange. Check the X app callback URL and backend logs.'),
+    ).toBeInTheDocument()
+  })
+
   it('shows Connect Facebook button when Facebook is not connected', async () => {
     vi.mocked(postsApi.listPosts).mockResolvedValue([])
 

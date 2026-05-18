@@ -169,9 +169,9 @@ func TestTwitterCallback_StoresSocialAccount(t *testing.T) {
 	}
 }
 
-// TestTwitterCallback_StateMismatch_Returns400 verifies that a tampered or
-// missing state results in 400 Bad Request — no DB row is created.
-func TestTwitterCallback_StateMismatch_Returns400(t *testing.T) {
+// TestTwitterCallback_StateMismatch_RedirectsWithSafeError verifies that a
+// tampered or missing state redirects safely — no DB row is created.
+func TestTwitterCallback_StateMismatch_RedirectsWithSafeError(t *testing.T) {
 	h := setupTwitterHandler(t, "twitter-999", "attacker")
 
 	req := httptest.NewRequest(http.MethodGet,
@@ -184,9 +184,7 @@ func TestTwitterCallback_StateMismatch_Returns400(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.TwitterCallback(w, req)
 
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400 on state mismatch, got %d", w.Code)
-	}
+	assertOAuthErrorRedirect(t, w, "twitter_state_mismatch")
 
 	// No social_accounts row should have been created.
 	var count int64

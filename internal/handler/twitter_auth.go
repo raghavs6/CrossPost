@@ -113,19 +113,19 @@ func (h *TwitterAuthHandler) TwitterCallback(w http.ResponseWriter, r *http.Requ
 	// --- Step 1: CSRF check — state cookie must match the URL parameter ---
 	stateCookie, err := r.Cookie("twitter_state")
 	if err != nil || r.URL.Query().Get("state") != stateCookie.Value {
-		http.Error(w, "state mismatch", http.StatusBadRequest)
+		redirectOAuthCallbackError(w, r, h.frontendURL, "twitter", "state_mismatch")
 		return
 	}
 
 	verifierCookie, err := r.Cookie("twitter_pkce_verifier")
 	if err != nil {
-		http.Error(w, "missing pkce verifier", http.StatusBadRequest)
+		redirectOAuthCallbackError(w, r, h.frontendURL, "twitter", "missing_pkce_verifier")
 		return
 	}
 
 	userIDCookie, err := r.Cookie("twitter_linking_user_id")
 	if err != nil {
-		http.Error(w, "missing user id cookie", http.StatusBadRequest)
+		redirectOAuthCallbackError(w, r, h.frontendURL, "twitter", "missing_user_cookie")
 		return
 	}
 
@@ -137,7 +137,7 @@ func (h *TwitterAuthHandler) TwitterCallback(w http.ResponseWriter, r *http.Requ
 	// --- Step 2: Parse the linking user ID from the cookie ---
 	rawUID, err := strconv.ParseUint(userIDCookie.Value, 10, 64)
 	if err != nil {
-		http.Error(w, "invalid user id cookie", http.StatusBadRequest)
+		redirectOAuthCallbackError(w, r, h.frontendURL, "twitter", "invalid_user_cookie")
 		return
 	}
 	userID := uint(rawUID)
@@ -145,7 +145,7 @@ func (h *TwitterAuthHandler) TwitterCallback(w http.ResponseWriter, r *http.Requ
 	// --- Step 3: Exchange the one-time code + PKCE verifier for access tokens ---
 	code := r.URL.Query().Get("code")
 	if code == "" {
-		http.Error(w, "missing code", http.StatusBadRequest)
+		redirectOAuthCallbackError(w, r, h.frontendURL, "twitter", "missing_code")
 		return
 	}
 
@@ -153,14 +153,14 @@ func (h *TwitterAuthHandler) TwitterCallback(w http.ResponseWriter, r *http.Requ
 	ctx := context.WithValue(r.Context(), oauth2.HTTPClient, h.httpClient)
 	token, err := h.oauthConf.Exchange(ctx, code, oauth2.VerifierOption(verifierCookie.Value))
 	if err != nil {
-		http.Error(w, "failed to exchange token", http.StatusInternalServerError)
+		redirectOAuthCallbackError(w, r, h.frontendURL, "twitter", "token_exchange_failed")
 		return
 	}
 
 	// --- Step 4: Fetch the Twitter user's profile ---
 	twitterUser, err := h.fetchTwitterUserInfo(token.AccessToken)
 	if err != nil {
-		http.Error(w, "failed to fetch twitter user info", http.StatusInternalServerError)
+		redirectOAuthCallbackError(w, r, h.frontendURL, "twitter", "profile_fetch_failed")
 		return
 	}
 
@@ -187,7 +187,7 @@ func (h *TwitterAuthHandler) TwitterCallback(w http.ResponseWriter, r *http.Requ
 		}).
 		FirstOrCreate(&account)
 	if result.Error != nil {
-		http.Error(w, "database error", http.StatusInternalServerError)
+		redirectOAuthCallbackError(w, r, h.frontendURL, "twitter", "database_failed")
 		return
 	}
 

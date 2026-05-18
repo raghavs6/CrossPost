@@ -80,6 +80,37 @@ const STATUS_STYLES: Record<Post['status'], string> = {
   failed: 'bg-red-500/20 text-red-300',
 }
 
+const OAUTH_ERROR_MESSAGES: Record<string, string> = {
+  twitter_state_mismatch: 'X connection failed because the login session expired. Please try connecting X again.',
+  twitter_missing_pkce_verifier: 'X connection failed because the security verifier was missing. Please try connecting X again.',
+  twitter_missing_user_cookie: 'X connection failed because the linking session expired. Please try connecting X again.',
+  twitter_invalid_user_cookie: 'X connection failed because the linking session was invalid. Please try connecting X again.',
+  twitter_missing_code: 'X connection failed because X did not return an authorization code. Please try again.',
+  twitter_token_exchange_failed: 'X connection failed during token exchange. Check the X app callback URL and backend logs.',
+  twitter_profile_fetch_failed: 'X connection failed while fetching your X profile. Check the requested X OAuth scopes.',
+  twitter_database_failed: 'X connection succeeded, but CrossPost could not save it. Please check the backend logs.',
+
+  instagram_state_mismatch: 'Instagram connection failed because the login session expired. Please try connecting Instagram again.',
+  instagram_missing_user_cookie: 'Instagram connection failed because the linking session expired. Please try connecting Instagram again.',
+  instagram_invalid_user_cookie: 'Instagram connection failed because the linking session was invalid. Please try connecting Instagram again.',
+  instagram_missing_code: 'Instagram connection failed because Instagram did not return an authorization code. Please try again.',
+  instagram_token_exchange_failed: 'Instagram connection failed during token exchange. Check the Instagram app callback URL and backend logs.',
+  instagram_profile_fetch_failed: 'Instagram connection failed while fetching your profile. Make sure the account is professional and scopes are approved.',
+  instagram_database_failed: 'Instagram connection succeeded, but CrossPost could not save it. Please check the backend logs.',
+
+  facebook_state_mismatch: 'Facebook connection failed because the login session expired. Please try connecting Facebook again.',
+  facebook_missing_user_cookie: 'Facebook connection failed because the linking session expired. Please try connecting Facebook again.',
+  facebook_invalid_user_cookie: 'Facebook connection failed because the linking session was invalid. Please try connecting Facebook again.',
+  facebook_missing_code: 'Facebook connection failed because Meta did not return an authorization code. Please try again.',
+  facebook_token_exchange_failed: 'Facebook connection failed during token exchange. Check the Meta app callback URL and backend logs.',
+  facebook_profile_fetch_failed: 'Facebook connection failed while fetching your Meta profile. Check app permissions.',
+  facebook_pages_fetch_failed: 'Facebook connection failed while loading Pages. Check Page permissions in the Meta app.',
+  facebook_no_pages_found: 'Facebook connected, but CrossPost could not find a manageable Page for this account.',
+  facebook_page_selection_state_failed: 'Facebook connected, but CrossPost could not prepare Page selection. Please try again.',
+  facebook_pending_cleanup_failed: 'Facebook connected, but CrossPost could not reset old Page choices. Please check the backend logs.',
+  facebook_pending_pages_store_failed: 'Facebook connected, but CrossPost could not save Page choices. Please check the backend logs.',
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
@@ -262,6 +293,10 @@ export default function DashboardPage() {
   const twitterConnection = connections.find((c) => c.platform === 'twitter')
   const facebookConnection = connections.find((c) => c.platform === 'facebook')
   const instagramConnection = connections.find((c) => c.platform === 'instagram')
+  const oauthError = searchParams.get('oauth_error')
+  const oauthErrorMessage = oauthError
+    ? OAUTH_ERROR_MESSAGES[oauthError] ?? 'Social account connection failed. Please try again.'
+    : null
 
   return (
     <div
@@ -392,6 +427,11 @@ export default function DashboardPage() {
           <h2 className="text-xs font-semibold tracking-[0.2em] text-white/60 uppercase">
             Connected Accounts
           </h2>
+          {oauthErrorMessage && (
+            <div className="rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3">
+              <p className="text-sm text-red-300">{oauthErrorMessage}</p>
+            </div>
+          )}
           {(searchParams.get('facebook') === 'select' || pendingFacebookPages.length > 0 || facebookSelectionError) && (
             <div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 px-4 py-4">
               <div className="flex flex-col gap-3">
